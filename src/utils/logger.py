@@ -3,7 +3,7 @@ import logging
 import sys
 from typing import Any
 
-from utils.config import ApplicationSettings
+from utils.config import get_settings
 
 # ANSI color codes for terminal output
 _RESET = "\033[0m"
@@ -67,16 +67,21 @@ class ColoredJsonFormatter(logging.Formatter):
         return super().format(record)
 
 
+APP_LOGGER_NAME = "app"
+
+
 def setup_logging() -> None:
-    settings = ApplicationSettings()
+    settings = get_settings()
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
     if not isinstance(level, int):
         level = logging.INFO
 
     root = logging.getLogger()
-    root.setLevel(level)
+    root.setLevel(logging.WARNING)
 
-    if not root.handlers:
+    app_logger = logging.getLogger(APP_LOGGER_NAME)
+    app_logger.setLevel(level)
+    if not app_logger.handlers:
         handler = logging.StreamHandler(sys.stderr)
         handler.setLevel(level)
         handler.setFormatter(
@@ -86,8 +91,8 @@ def setup_logging() -> None:
                 datefmt=ColoredJsonFormatter.DATE_FMT,
             )
         )
-        root.addHandler(handler)
+        app_logger.addHandler(handler)
 
 
 def get_logger(name: str) -> logging.Logger:
-    return logging.getLogger(name)
+    return logging.getLogger(f"{APP_LOGGER_NAME}.{name}")

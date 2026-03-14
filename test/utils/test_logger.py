@@ -5,6 +5,7 @@ import logging
 from unittest.mock import patch
 
 from utils.logger import (
+    APP_LOGGER_NAME,
     ColoredJsonFormatter,
     _serialize_message,
     get_logger,
@@ -110,7 +111,7 @@ class TestGetLogger:
 
     def test_returns_logger_with_given_name(self) -> None:
         logger = get_logger("test.logger.name")
-        assert logger.name == "test.logger.name"
+        assert logger.name == f"{APP_LOGGER_NAME}.test.logger.name"
         assert isinstance(logger, logging.Logger)
 
     def test_same_name_returns_same_instance(self) -> None:
@@ -122,37 +123,39 @@ class TestGetLogger:
 class TestSetupLogging:
     """Tests for setup_logging."""
 
-    def test_setup_logging_sets_root_level_and_handler(self) -> None:
-        with patch("utils.logger.ApplicationSettings") as mock_settings:
-            mock_settings.return_value.log_level = "DEBUG"
+    def test_setup_logging_sets_app_level_and_handler(self) -> None:
+        with patch("utils.logger.get_settings") as mock_get_settings:
+            mock_get_settings.return_value.log_level = "DEBUG"
             setup_logging()
         root = logging.getLogger()
-        assert root.level == logging.DEBUG
-        assert len(root.handlers) >= 1
+        assert root.level == logging.WARNING
+        app_logger = logging.getLogger(APP_LOGGER_NAME)
+        assert app_logger.level == logging.DEBUG
+        assert len(app_logger.handlers) >= 1
 
     def test_setup_logging_uses_formatter(self) -> None:
-        root = logging.getLogger()
-        original_handlers = root.handlers.copy()
-        root.handlers.clear()
+        app_logger = logging.getLogger(APP_LOGGER_NAME)
+        original_handlers = app_logger.handlers.copy()
+        app_logger.handlers.clear()
         try:
-            with patch("utils.logger.ApplicationSettings") as mock_settings:
-                mock_settings.return_value.log_level = "INFO"
+            with patch("utils.logger.get_settings") as mock_get_settings:
+                mock_get_settings.return_value.log_level = "INFO"
                 setup_logging()
             stream_handlers = [
-                h for h in root.handlers if isinstance(h, logging.StreamHandler)
+                h for h in app_logger.handlers if isinstance(h, logging.StreamHandler)
             ]
             formatters = [h.formatter for h in stream_handlers if h.formatter]
             assert any(isinstance(f, ColoredJsonFormatter) for f in formatters)
         finally:
-            root.handlers.clear()
-            root.handlers.extend(original_handlers)
+            app_logger.handlers.clear()
+            app_logger.handlers.extend(original_handlers)
 
     def test_setup_logging_invalid_level_falls_back_to_info(self) -> None:
-        with patch("utils.logger.ApplicationSettings") as mock_settings:
-            mock_settings.return_value.log_level = "NOT_A_LEVEL"
+        with patch("utils.logger.get_settings") as mock_get_settings:
+            mock_get_settings.return_value.log_level = "NOT_A_LEVEL"
             setup_logging()
-        root = logging.getLogger()
-        assert root.getEffectiveLevel() in (
+        app_logger = logging.getLogger(APP_LOGGER_NAME)
+        assert app_logger.getEffectiveLevel() in (
             logging.DEBUG,
             logging.INFO,
             logging.WARNING,

@@ -28,6 +28,12 @@ class BaseConsumer(ABC, threading.Thread):
         self.connection: BlockingConnection | None = None
         self.channel: BlockingChannel | None = None
 
+    @staticmethod
+    def health_check(amqp_url: str) -> bool:
+        conn = pika.BlockingConnection(pika.URLParameters(amqp_url))
+        conn.close()
+        return True
+
     def _setup(self) -> None:
         assert self.channel is not None
         self.channel.exchange_declare(
