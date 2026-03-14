@@ -37,7 +37,7 @@ Events (e.g. new posts) are consumed from a message broker; the service embeds c
 ### 1. Clone and install dependencies
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Dexbooru/dexbooru-ai.git
 cd dexbooru-ai
 make install
 ```
