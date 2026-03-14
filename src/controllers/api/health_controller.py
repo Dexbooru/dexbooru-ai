@@ -3,8 +3,8 @@ import asyncio
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from core.consumer import BaseConsumer
-from core.dependencies import get_consumer, get_gemini, get_qdrant
+from core.consumer import is_amqp_healthy
+from core.dependencies import get_amqp_url, get_gemini, get_qdrant
 from models.api_responses.health import HealthResponse
 from services.gemini_client import GeminiClientService
 from services.qdrant_client import QdrantClientService
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/health", tags=["health"])
 async def get_health_check(
     qdrant: QdrantClientService = Depends(get_qdrant),
     gemini: GeminiClientService = Depends(get_gemini),
-    consumer: BaseConsumer = Depends(get_consumer),
+    amqp_url: str = Depends(get_amqp_url),
 ) -> HealthResponse | JSONResponse:
     qdrant_ok = False
     try:
@@ -37,7 +37,7 @@ async def get_health_check(
 
     amqp_ok = False
     try:
-        amqp_ok = await asyncio.to_thread(BaseConsumer.health_check, consumer.amqp_url)
+        amqp_ok = await asyncio.to_thread(is_amqp_healthy, amqp_url)
         logger.info("Health check amqp: %s", amqp_ok)
     except Exception:
         logger.exception("Health check amqp failed")

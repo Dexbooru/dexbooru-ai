@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 from controllers.api import health_controller
 from controllers.api.health_controller import router as health_router
-from core.consumer import BaseConsumer
 from models.api_responses.health import HealthResponse
 from services.gemini_client import GeminiClientService
 from services.qdrant_client import QdrantClientService
@@ -28,16 +27,14 @@ class TestHealthCheckEndpoint:
         app = _make_app()
         mock_qdrant = MagicMock()
         mock_gemini = MagicMock()
-        mock_consumer = MagicMock()
-        mock_consumer.amqp_url = "amqp://localhost/"
 
         mock_qdrant.is_healthy = AsyncMock(return_value=True)
         mock_gemini.is_healthy.return_value = True
 
         with (
-            patch_health_deps(app, mock_qdrant, mock_gemini, mock_consumer),
+            patch_health_deps(app, mock_qdrant, mock_gemini),
             patch(
-                "controllers.api.health_controller.BaseConsumer.health_check",
+                "controllers.api.health_controller.is_amqp_healthy",
                 return_value=True,
             ),
         ):
@@ -54,16 +51,14 @@ class TestHealthCheckEndpoint:
         app = _make_app()
         mock_qdrant = MagicMock()
         mock_gemini = MagicMock()
-        mock_consumer = MagicMock()
-        mock_consumer.amqp_url = "amqp://localhost/"
 
         mock_qdrant.is_healthy = AsyncMock(return_value=False)
         mock_gemini.is_healthy.return_value = True
 
         with (
-            patch_health_deps(app, mock_qdrant, mock_gemini, mock_consumer),
+            patch_health_deps(app, mock_qdrant, mock_gemini),
             patch(
-                "controllers.api.health_controller.BaseConsumer.health_check",
+                "controllers.api.health_controller.is_amqp_healthy",
                 return_value=True,
             ),
         ):
@@ -80,16 +75,14 @@ class TestHealthCheckEndpoint:
         app = _make_app()
         mock_qdrant = MagicMock()
         mock_gemini = MagicMock()
-        mock_consumer = MagicMock()
-        mock_consumer.amqp_url = "amqp://localhost/"
 
         mock_qdrant.is_healthy = AsyncMock(return_value=True)
         mock_gemini.is_healthy.return_value = False
 
         with (
-            patch_health_deps(app, mock_qdrant, mock_gemini, mock_consumer),
+            patch_health_deps(app, mock_qdrant, mock_gemini),
             patch(
-                "controllers.api.health_controller.BaseConsumer.health_check",
+                "controllers.api.health_controller.is_amqp_healthy",
                 return_value=True,
             ),
         ):
@@ -106,16 +99,14 @@ class TestHealthCheckEndpoint:
         app = _make_app()
         mock_qdrant = MagicMock()
         mock_gemini = MagicMock()
-        mock_consumer = MagicMock()
-        mock_consumer.amqp_url = "amqp://localhost/"
 
         mock_qdrant.is_healthy = AsyncMock(return_value=True)
         mock_gemini.is_healthy.return_value = True
 
         with (
-            patch_health_deps(app, mock_qdrant, mock_gemini, mock_consumer),
+            patch_health_deps(app, mock_qdrant, mock_gemini),
             patch(
-                "controllers.api.health_controller.BaseConsumer.health_check",
+                "controllers.api.health_controller.is_amqp_healthy",
                 return_value=False,
             ),
         ):
@@ -132,16 +123,14 @@ class TestHealthCheckEndpoint:
         app = _make_app()
         mock_qdrant = MagicMock()
         mock_gemini = MagicMock()
-        mock_consumer = MagicMock()
-        mock_consumer.amqp_url = "amqp://localhost/"
 
         mock_qdrant.is_healthy = AsyncMock(return_value=True)
         mock_gemini.is_healthy.return_value = True
 
         with (
-            patch_health_deps(app, mock_qdrant, mock_gemini, mock_consumer),
+            patch_health_deps(app, mock_qdrant, mock_gemini),
             patch(
-                "controllers.api.health_controller.BaseConsumer.health_check",
+                "controllers.api.health_controller.is_amqp_healthy",
                 return_value=True,
             ),
         ):
@@ -160,7 +149,6 @@ def patch_health_deps(
     app: FastAPI,
     qdrant: QdrantClientService,
     gemini: GeminiClientService,
-    consumer: BaseConsumer,
 ) -> Generator[None, None, None]:
     """Override health dependencies to use the given mocks."""
 
@@ -170,12 +158,12 @@ def patch_health_deps(
     def get_gemini_override(request: Request) -> GeminiClientService:
         return gemini
 
-    def get_consumer_override(request: Request) -> BaseConsumer:
-        return consumer
+    def get_amqp_url_override(request: Request) -> str:
+        return "amqp://localhost/"
 
     app.dependency_overrides[health_controller.get_qdrant] = get_qdrant_override
     app.dependency_overrides[health_controller.get_gemini] = get_gemini_override
-    app.dependency_overrides[health_controller.get_consumer] = get_consumer_override
+    app.dependency_overrides[health_controller.get_amqp_url] = get_amqp_url_override
     try:
         yield
     finally:

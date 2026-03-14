@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 # Application lifecycle manager
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    _app.state.amqp_url = settings.amqp_url
     _app.state.qdrant = QdrantClientService()
     _app.state.gemini = GeminiClientService()
 
@@ -31,7 +32,6 @@ async def lifespan(_app: FastAPI):
     for consumer in consumers:
         consumer.start()
         logger.info("Started consumer: %s", consumer.__class__.__name__)
-    _app.state.consumers = consumers
 
     yield
 

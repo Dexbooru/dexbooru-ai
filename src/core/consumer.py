@@ -7,6 +7,15 @@ from pika.channel import Channel
 from pika.spec import Basic, BasicProperties
 
 
+def is_amqp_healthy(amqp_url: str) -> bool:
+    try:
+        conn = pika.BlockingConnection(pika.URLParameters(amqp_url))
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
 class BaseConsumer(ABC, threading.Thread):
     """Abstract base consumer. Owns its own connection and channel for isolation."""
 
@@ -27,12 +36,6 @@ class BaseConsumer(ABC, threading.Thread):
         self.routing_key = routing_key or queue_name
         self.connection: BlockingConnection | None = None
         self.channel: BlockingChannel | None = None
-
-    @staticmethod
-    def health_check(amqp_url: str) -> bool:
-        conn = pika.BlockingConnection(pika.URLParameters(amqp_url))
-        conn.close()
-        return True
 
     def _setup(self) -> None:
         assert self.channel is not None
