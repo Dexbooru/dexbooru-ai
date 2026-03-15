@@ -3,6 +3,9 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams
 
 from utils.config import get_settings
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class QdrantClientService:
@@ -12,11 +15,19 @@ class QdrantClientService:
 
     def __init__(self) -> None:
         settings = get_settings()
+
+        use_https = (
+            settings.qdrant_url.startswith("https")
+            and settings.environment == "production"
+        )
+        port = 443 if use_https else None
+        https = use_https
+
         self.client = AsyncQdrantClient(
             url=settings.qdrant_url,
             api_key=settings.qdrant_api_key or None,
-            https=settings.qdrant_url.startswith("https")
-            and settings.environment == "production",
+            port=port,
+            https=https,
         )
         self.output_dimensions = settings.gemini_output_dimensions
 
@@ -28,6 +39,9 @@ class QdrantClientService:
         return VectorParams(
             size=self.output_dimensions, distance=self.SIMILARITY_METRIC
         )
+
+    async def _does_collection_exist(self, collection_name: str) -> bool:
+        return await self.client.collection_exists(collection_name=collection_name)
 
     async def _create_collection(
         self, collection_name: str, vectors_config: VectorParams, recreate: bool = False
@@ -44,16 +58,26 @@ class QdrantClientService:
         return created_collection_successfully
 
     async def create_base_collections(self) -> bool:
-        base_collections_created_successfully = False
-
         for collection_name in self.BASE_COLLECTION_NAMES:
+            collection_exists = await self._does_collection_exist(collection_name)
+            if collection_exists:
+                logger.info("Collection %s already exists", collection_name)
+                continue
+
+            logger.info("Creating collection %s", collection_name)
             base_collections_created_successfully = await self._create_collection(
                 collection_name=collection_name,
                 vectors_config=self._build_vectors_config(),
-                recreate=True,
+                recreate=False,
             )
 
-        return base_collections_created_successfully
+            if not base_collections_created_successfully:
+                logger.error("Failed to create collection %s", collection_name)
+                return False
+
+            logger.info("Collection %s created successfully", collection_name)
+
+        return True
 
     async def is_healthy(self) -> bool:
         healthz_url = f"{self._get_client_base_url()}/healthz"
