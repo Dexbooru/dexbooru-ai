@@ -25,6 +25,14 @@ async def lifespan(_app: FastAPI):
     _app.state.qdrant = QdrantClientService()
     _app.state.gemini = GeminiClientService()
 
+    # Initialize base collections, if they don't exist already
+    base_collections_created_successfully = (
+        await _app.state.qdrant.create_base_collections()
+    )
+    if not base_collections_created_successfully:
+        logger.error("Failed to create base collections")
+        raise RuntimeError("Failed to create base collections")
+
     # Each consumer gets its own connection and channel (no shared conn on failure)
     consumers: list[BaseConsumer] = []
 
