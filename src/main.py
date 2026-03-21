@@ -1,8 +1,10 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import APIRouter, FastAPI
 
+from consumers.new_post_consumer import NewPostConsumer
 from controllers.api.health_controller import router as health_router
 from core.consumer import BaseConsumer
 from services.gemini_client import GeminiClientService
@@ -26,15 +28,21 @@ async def lifespan(_app: FastAPI):
     _app.state.gemini = GeminiClientService()
 
     # Initialize base collections, if they don't exist already
-    base_collections_created_successfully = (
-        await _app.state.qdrant.create_base_collections()
-    )
+    base_collections_created_successfully = await _app.state.qdrant.create_base_collections()
     if not base_collections_created_successfully:
         logger.error("Failed to create base collections")
         raise RuntimeError("Failed to create base collections")
 
-    # Each consumer gets its own connection and channel (no shared conn on failure)
-    consumers: list[BaseConsumer] = []
+    loop = asyncio.get_running_loop()
+    consumers: list[BaseConsumer] = [
+        NewPostConsumer(
+            amqp_url=settings.amqp_url,
+            exchange_name=settings.primary_exchange_name,
+            event_loop=loop,
+            qdrant=_app.state.qdrant,
+            gemini=_app.state.gemini,
+        ),
+    ]
 
     logger.info("Starting %d consumer(s)", len(consumers))
     for consumer in consumers:

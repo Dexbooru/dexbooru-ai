@@ -1,5 +1,3 @@
-"""App-wide dependency injection. Services are created in lifespan and reused."""
-
 from fastapi import Request
 
 from services.gemini_client import GeminiClientService

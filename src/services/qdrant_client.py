@@ -1,60 +1,59 @@
 import aiohttp
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, VectorParams
+from qdrant_client.models import Distance, PointStruct, VectorParams
 
+from models.application.posts import DexbooruPost
 from utils.config import get_settings
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-class QdrantClientService:
-    BASE_COLLECTION_NAMES: list[str] = ["post_text", "post_image"]
+class QdrantClientService(AsyncQdrantClient):
+    POST_IMAGE_COLLECTION_NAME: str = "post_image"
+    BASE_COLLECTION_NAMES: list[str] = [POST_IMAGE_COLLECTION_NAME]
+
     SIMILARITY_METRIC: Distance = Distance.COSINE
+
     HEALTH_CHECK_PASSED_TEXT: str = "healthz check passed"
 
     def __init__(self) -> None:
         settings = get_settings()
 
-        use_https = (
-            settings.qdrant_url.startswith("https")
-            and settings.environment == "production"
-        )
+        use_https = settings.qdrant_url.startswith("https") and settings.environment == "production"
         port = 443 if use_https else None
-        https = use_https
 
-        self.client = AsyncQdrantClient(
+        super().__init__(
             url=settings.qdrant_url,
             api_key=settings.qdrant_api_key or None,
             port=port,
-            https=https,
+            https=use_https,
         )
         self.output_dimensions = settings.gemini_output_dimensions
 
+    @property
+    def http(self):
+        if hasattr(self._client, "http"):
+            return self._client.http
+        return super().http
+
     def _get_client_base_url(self) -> str:
-        base_url = self.client.http.client.host
+        base_url = self.http.client.host
         return base_url.rstrip("/")
 
     def _build_vectors_config(self) -> VectorParams:
-        return VectorParams(
-            size=self.output_dimensions, distance=self.SIMILARITY_METRIC
-        )
+        return VectorParams(size=self.output_dimensions, distance=self.SIMILARITY_METRIC)
 
     async def _does_collection_exist(self, collection_name: str) -> bool:
-        return await self.client.collection_exists(collection_name=collection_name)
+        return await self.collection_exists(collection_name=collection_name)
 
-    async def _create_collection(
-        self, collection_name: str, vectors_config: VectorParams, recreate: bool = False
-    ) -> bool:
+    async def _create_collection(self, collection_name: str, vectors_config: VectorParams, recreate: bool = False) -> bool:
         created_collection_successfully = False
         if recreate:
-            created_collection_successfully = await self.client.delete_collection(
-                collection_name=collection_name
-            )
+            created_collection_successfully = await self.delete_collection(collection_name=collection_name)
         else:
-            created_collection_successfully = await self.client.create_collection(
-                collection_name=collection_name, vectors_config=vectors_config
-            )
+            await self.create_collection(collection_name=collection_name, vectors_config=vectors_config)
+            created_collection_successfully = True
         return created_collection_successfully
 
     async def create_base_collections(self) -> bool:
@@ -79,13 +78,24 @@ class QdrantClientService:
 
         return True
 
+    async def add_post_image(self, post: DexbooruPost, image_embeddings: list[list[float]]):
+        upsert_result = await self.upsert(
+            collection_name=QdrantClientService.POST_IMAGE_COLLECTION_NAME,
+            points=[PointStruct(id=post.id, vector=image_embedding, payload=post.model_dump()) for image_embedding in image_embeddings],
+        )
+
+        logger.info(
+            "Upsert result added for post %s, with operation id %s and status %s",
+            post.id,
+            upsert_result.operation_id,
+            upsert_result.status,
+        )
+        return upsert_result
+
     async def is_healthy(self) -> bool:
         healthz_url = f"{self._get_client_base_url()}/healthz"
         async with aiohttp.ClientSession() as session:
             async with session.get(healthz_url) as response:
                 health_response_text = await response.text()
 
-                return (
-                    response.status == 200
-                    and health_response_text.strip() == self.HEALTH_CHECK_PASSED_TEXT
-                )
+                return response.status == 200 and health_response_text.strip() == self.HEALTH_CHECK_PASSED_TEXT

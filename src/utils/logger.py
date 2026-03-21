@@ -30,10 +30,7 @@ def _serialize_message(msg: Any, *args: Any) -> str:
     if isinstance(msg, (dict, list)):
         return json.dumps(msg, indent=2, default=str)
     if args:
-        formatted_args = tuple(
-            json.dumps(a, indent=2, default=str) if isinstance(a, (dict, list)) else a
-            for a in args
-        )
+        formatted_args = tuple(json.dumps(a, indent=2, default=str) if isinstance(a, (dict, list)) else a for a in args)
         try:
             return str(msg) % formatted_args
         except (TypeError, ValueError):

@@ -13,9 +13,7 @@ class ApplicationSettings(BaseSettings):
 
     # AMQP settings
     amqp_url: str = Field(validation_alias="AMQP_URL")
-    primary_exchange_name: str = Field(
-        default="ai_events", validation_alias="PRIMARY_EXCHANGE_NAME"
-    )
+    primary_exchange_name: str = Field(default="ai_events", validation_alias="PRIMARY_EXCHANGE_NAME")
 
     # Qdrant settings
     qdrant_url: str = Field(validation_alias="QDRANT_URL")
@@ -27,13 +25,15 @@ class ApplicationSettings(BaseSettings):
         default="gemini-embedding-2-preview",
         validation_alias="GEMINI_EMBEDDING_MODEL_NAME",
     )
-    gemini_output_dimensions: int = Field(
-        default=1536, validation_alias="GEMINI_OUTPUT_DIMENSIONS"
-    )
+    gemini_output_dimensions: int = Field(default=1536, validation_alias="GEMINI_OUTPUT_DIMENSIONS")
 
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
+    # image settings
+    cdn_base_url: str = Field(validation_alias="CDN_BASE_URL")
+    image_resize_width: int = Field(validation_alias="IMAGE_RESIZE_WIDTH", default=512)
+    image_resize_height: int = Field(validation_alias="IMAGE_RESIZE_HEIGHT", default=512)
+
+    # environment configuration (system wide takes precedence over local)
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 _instance: ApplicationSettings | None = None

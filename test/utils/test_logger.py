@@ -69,9 +69,7 @@ class TestColoredJsonFormatter:
         )
 
     def test_format_without_color_is_deterministic(self) -> None:
-        formatter = ColoredJsonFormatter(
-            use_color=False, fmt="%(levelname)s %(message)s"
-        )
+        formatter = ColoredJsonFormatter(use_color=False, fmt="%(levelname)s %(message)s")
         record = self._make_record(msg="hello")
         out = formatter.format(record)
         assert "INFO" in out or "info" in out.lower()
@@ -98,9 +96,7 @@ class TestColoredJsonFormatter:
         assert "event" in out and "started" in out and "id" in out
 
     def test_format_pads_levelname(self) -> None:
-        formatter = ColoredJsonFormatter(
-            use_color=False, fmt="%(levelname)s — %(message)s"
-        )
+        formatter = ColoredJsonFormatter(use_color=False, fmt="%(levelname)s — %(message)s")
         record = self._make_record(msg="m", levelno=logging.INFO)
         out = formatter.format(record)
         assert "m" in out
@@ -141,9 +137,7 @@ class TestSetupLogging:
             with patch("utils.logger.get_settings") as mock_get_settings:
                 mock_get_settings.return_value.log_level = "INFO"
                 setup_logging()
-            stream_handlers = [
-                h for h in app_logger.handlers if isinstance(h, logging.StreamHandler)
-            ]
+            stream_handlers = [h for h in app_logger.handlers if isinstance(h, logging.StreamHandler)]
             formatters = [h.formatter for h in stream_handlers if h.formatter]
             assert any(isinstance(f, ColoredJsonFormatter) for f in formatters)
         finally:
