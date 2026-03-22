@@ -8,6 +8,13 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: bash -c 'PYTHONPATH=src uv run pytest test/ -v'
+        entry: uv run pytest test/ -v
         language: system
         pass_filenames: false
+
+      - id: push-models-to-s3
+        name: push ML models to S3 (metadata staged)
+        entry: ./scripts/push-models-to-s3.sh --staged
+        language: system
+        pass_filenames: false
+        files: ^models/metadata/.*\.meta\.json$

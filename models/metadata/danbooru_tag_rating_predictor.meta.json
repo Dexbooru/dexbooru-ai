@@ -1,0 +1,11 @@
+{
+  "saved_at_utc": "2026-03-22T21:54:59.801442+00:00",
+  "random_state": 111544077,
+  "best_params": {
+    "clf__alpha": 0.02848035868435802
+  },
+  "test_accuracy": 0.8621609604268564,
+  "test_recall_macro": 0.8621590357423855,
+  "data_dir": "/home/tanny/dev/dexbooru-ai/model_training/raw_data/danbooru_posts/final",
+  "n_training_rows_after_concat": 179916
+}
