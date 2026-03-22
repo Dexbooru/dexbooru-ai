@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 from pydantic import Field
@@ -32,6 +33,10 @@ class ApplicationSettings(BaseSettings):
     image_resize_width: int = Field(validation_alias="IMAGE_RESIZE_WIDTH", default=512)
     image_resize_height: int = Field(validation_alias="IMAGE_RESIZE_HEIGHT", default=512)
 
+    # ML / spaCy (tag-rating predictor)
+    danbooru_tag_rating_skops_path: Path = Field(validation_alias="DANBOORU_TAG_RATING_SKOPS_PATH")
+    spacy_english_model: str = Field(default="en_core_web_md", validation_alias="SPACY_ENGLISH_MODEL")
+
     # environment configuration (system wide takes precedence over local)
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -44,6 +49,12 @@ def get_settings() -> ApplicationSettings:
     if _instance is None:
         _instance = ApplicationSettings()
     return _instance
+
+
+def reset_settings_cache() -> None:
+    """Clear the memoized settings singleton (for tests / reload)."""
+    global _instance
+    _instance = None
 
 
 def __getattr__(name: str) -> Any:
