@@ -1,0 +1,22 @@
+meta {
+  name: predict NSFW tag string rating
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:8001/api/tag-rating/predict
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "tag_string": "nipples pussy boobs"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
