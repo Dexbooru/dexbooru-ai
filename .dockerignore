@@ -8,3 +8,5 @@ __pycache__
 .pre-commit-config.yaml
 *.md
 Makefile
+
+model_training/*

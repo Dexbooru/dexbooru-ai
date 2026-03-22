@@ -6,9 +6,12 @@ from fastapi import APIRouter, FastAPI
 
 from consumers.new_post_consumer import NewPostConsumer
 from controllers.api.health_controller import router as health_router
+from controllers.api.tag_rating_controller import router as tag_rating_router
 from core.consumer import BaseConsumer
+from ml.dexbooru_tag_rating_predictor import DexbooruTagRatingPredictor
 from services.gemini_client import GeminiClientService
 from services.qdrant_client import QdrantClientService
+from services.spacy_nlp import load_spacy_english
 from utils.config import get_settings
 from utils.logger import get_logger, setup_logging
 from utils.server import get_version as get_server_version
@@ -24,6 +27,15 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     _app.state.amqp_url = settings.amqp_url
+
+    logger.info("Loading spaCy model %s", settings.spacy_english_model)
+    _app.state.nlp = load_spacy_english(settings)
+    logger.info("Loading Danbooru tag-rating skops from %s", settings.danbooru_tag_rating_skops_path)
+    _app.state.tag_rating_predictor = DexbooruTagRatingPredictor(
+        nlp=_app.state.nlp,
+        skops_path=settings.danbooru_tag_rating_skops_path,
+    )
+
     _app.state.qdrant = QdrantClientService()
     _app.state.gemini = GeminiClientService()
 
@@ -66,6 +78,7 @@ app = FastAPI(
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health_router)
+api_router.include_router(tag_rating_router)
 
 app.include_router(api_router)
 
