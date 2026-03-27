@@ -1,4 +1,5 @@
 import aiohttp
+import numpy as np
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
@@ -14,6 +15,9 @@ class QdrantClientService(AsyncQdrantClient):
     BASE_COLLECTION_NAMES: list[str] = [POST_IMAGE_COLLECTION_NAME]
 
     SIMILARITY_METRIC: Distance = Distance.COSINE
+
+    POST_IMAGE_SIMILARITY_QUERY_TIMEOUT_SEC: int = 10
+    POST_IMAGE_SIMILARITY_SCORE_THRESHOLD: float = 0.5
 
     HEALTH_CHECK_PASSED_TEXT: str = "healthz check passed"
 
@@ -91,6 +95,39 @@ class QdrantClientService(AsyncQdrantClient):
             upsert_result.status,
         )
         return upsert_result
+
+    async def search_post_image_similarity(self, query_vector: list[float], limit: int) -> list[dict]:
+        if not query_vector:
+            return []
+
+        vector_np = np.array(query_vector, dtype=np.float32)
+        vector_norm = float(np.linalg.norm(vector_np))
+        if vector_norm > 0 and not np.isclose(vector_norm, 1.0, atol=1e-3):
+            vector_np = vector_np / vector_norm
+
+        search_result = await self.query_points(
+            collection_name=QdrantClientService.POST_IMAGE_COLLECTION_NAME,
+            query=vector_np.tolist(),
+            limit=limit,
+            with_payload=True,
+            timeout=QdrantClientService.POST_IMAGE_SIMILARITY_QUERY_TIMEOUT_SEC,
+            score_threshold=QdrantClientService.POST_IMAGE_SIMILARITY_SCORE_THRESHOLD,
+        )
+
+        mapped_results: list[dict] = []
+        for result in search_result.points or []:
+            payload = result.payload or {}
+            image_urls = payload.get("image_urls") or []
+            image_url = image_urls[0] if image_urls else ""
+            mapped_results.append(
+                {
+                    "post_id": str(result.id),
+                    "image_url": image_url,
+                    "score": float(result.score),
+                }
+            )
+
+        return mapped_results
 
     async def is_healthy(self) -> bool:
         healthz_url = f"{self._get_client_base_url()}/healthz"

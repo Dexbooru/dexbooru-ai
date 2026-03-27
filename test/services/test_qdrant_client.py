@@ -259,3 +259,69 @@ class TestQdrantClientServiceAddPostImage:
         assert points[1].id == post.id
         assert points[1].vector == [0.2] * 1536
         assert points[1].payload == post.model_dump()
+
+
+class TestQdrantClientServiceSearchPostImageSimilarity:
+    """Tests for QdrantClientService.search_post_image_similarity."""
+
+    def test_returns_empty_list_for_empty_query_vector(self) -> None:
+        svc = _make_service_with_mock_http()
+        svc.query_points = AsyncMock()
+
+        result = asyncio.run(svc.search_post_image_similarity(query_vector=[], limit=5))
+
+        assert result == []
+        svc.query_points.assert_not_called()
+
+    def test_normalizes_query_vector_and_maps_results(self) -> None:
+        svc = _make_service_with_mock_http()
+        mock_hit = MagicMock()
+        mock_hit.id = "post-1"
+        mock_hit.score = 0.81234
+        mock_hit.payload = {"image_urls": ["https://cdn.example.com/1.png"]}
+        mock_query_response = MagicMock()
+        mock_query_response.points = [mock_hit]
+        svc.query_points = AsyncMock(return_value=mock_query_response)
+
+        result = asyncio.run(svc.search_post_image_similarity(query_vector=[3.0, 4.0], limit=2))
+
+        svc.query_points.assert_awaited_once()
+        call_kw = svc.query_points.call_args[1]
+        assert call_kw["collection_name"] == QdrantClientService.POST_IMAGE_COLLECTION_NAME
+        assert call_kw["limit"] == 2
+        assert call_kw["with_payload"] is True
+        assert call_kw["timeout"] == QdrantClientService.POST_IMAGE_SIMILARITY_QUERY_TIMEOUT_SEC
+        assert call_kw["score_threshold"] == QdrantClientService.POST_IMAGE_SIMILARITY_SCORE_THRESHOLD
+        assert call_kw["query"] == pytest.approx([0.6, 0.8], rel=1e-6)
+        assert result == [
+            {
+                "post_id": "post-1",
+                "image_url": "https://cdn.example.com/1.png",
+                "score": 0.81234,
+            }
+        ]
+
+    def test_keeps_query_vector_when_already_normalized(self) -> None:
+        svc = _make_service_with_mock_http()
+        mock_query_response = MagicMock()
+        mock_query_response.points = []
+        svc.query_points = AsyncMock(return_value=mock_query_response)
+
+        asyncio.run(svc.search_post_image_similarity(query_vector=[0.6, 0.8], limit=3))
+
+        call_kw = svc.query_points.call_args[1]
+        assert call_kw["query"] == pytest.approx([0.6, 0.8], rel=1e-6)
+
+    def test_maps_empty_image_urls_to_empty_string(self) -> None:
+        svc = _make_service_with_mock_http()
+        mock_hit = MagicMock()
+        mock_hit.id = "post-2"
+        mock_hit.score = 0.5
+        mock_hit.payload = {}
+        mock_query_response = MagicMock()
+        mock_query_response.points = [mock_hit]
+        svc.query_points = AsyncMock(return_value=mock_query_response)
+
+        result = asyncio.run(svc.search_post_image_similarity(query_vector=[1.0, 0.0], limit=1))
+
+        assert result == [{"post_id": "post-2", "image_url": "", "score": 0.5}]

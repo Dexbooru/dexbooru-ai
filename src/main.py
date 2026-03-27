@@ -6,6 +6,7 @@ from fastapi import APIRouter, FastAPI
 
 from consumers.new_post_consumer import NewPostConsumer
 from controllers.api.health_controller import router as health_router
+from controllers.api.similarity_posts_images_controller import router as similarity_posts_images_router
 from controllers.api.tag_rating_controller import router as tag_rating_router
 from core.consumer import BaseConsumer
 from ml.dexbooru_tag_rating_predictor import DexbooruTagRatingPredictor
@@ -78,6 +79,7 @@ app = FastAPI(
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health_router)
+api_router.include_router(similarity_posts_images_router)
 api_router.include_router(tag_rating_router)
 
 app.include_router(api_router)
