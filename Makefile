@@ -1,4 +1,4 @@
-.PHONY: run install format build docker-run init-qdrant test
+.PHONY: run install format build docker-run init-qdrant test test\:coverage
 
 run:
 	PYTHONPATH=src uv run python src/main.py
@@ -8,6 +8,9 @@ install:
 
 test:
 	PYTHONPATH=src uv run pytest test/ -v
+
+test\:coverage:
+	./scripts/test-coverage.sh
 
 format:
 	uv run ruff format src test

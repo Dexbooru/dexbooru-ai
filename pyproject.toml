@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp[speedups]>=3.13.3",
+    "en-core-web-md",
     "fastapi[standard]>=0.135.1",
     "google-genai>=1.0.0",
     "pandas>=3.0.1",
@@ -26,6 +27,7 @@ dev = [
     "pip>=26.0.1",
     "pre-commit>=4.0.0",
     "pytest>=8.0.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.8.0",
 ]
 
@@ -45,3 +47,6 @@ ignore = ["N806"]
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.uv.sources]
+en-core-web-md = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl" }
