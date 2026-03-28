@@ -1,6 +1,3 @@
-import datetime
-from uuid import uuid4
-
 import aiohttp
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
@@ -21,18 +18,6 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/similarity/posts/images", tags=["ml"])
 
 MAX_UPLOAD_IMAGE_BYTES = 3 * 1024 * 1024
-
-
-def _build_synthetic_post() -> DexbooruPost:
-    now = datetime.datetime.now(datetime.UTC)
-    return DexbooruPost(
-        id=uuid4(),
-        description="similarity-search-query",
-        image_urls=[],
-        created_at=now,
-        updated_at=now,
-        author_id=uuid4(),
-    )
 
 
 def _normalize_content_type(content_type: str | None) -> str:
@@ -74,13 +59,16 @@ async def _load_image_from_upload(image_file: UploadFile) -> bytes:
 async def search_similar_post_images(
     image_url: str | None = Form(default=None),
     top_closest_match_count: int = Form(default=5),
+    description: str | None = Form(default=None),
     image_file: UploadFile | None = File(default=None),
     qdrant: QdrantClientService = Depends(get_qdrant),
     gemini: GeminiClientService = Depends(get_gemini),
 ) -> PostImageSimilaritySearchResponse:
+    desc_stripped = description.strip() if description else None
     form = PostImageSimilaritySearchForm(
         image_url=image_url.strip() if image_url else None,
         top_closest_match_count=top_closest_match_count,
+        description=desc_stripped if desc_stripped else None,
     )
 
     has_image_url = bool(form.image_url)
@@ -100,10 +88,10 @@ async def search_similar_post_images(
         input_image_bytes = await (
             _load_image_from_url(form.image_url) if form.image_url else _load_image_from_upload(image_file)  # type: ignore[arg-type]
         )
-        preprocessor = ImagePreprocessor(_build_synthetic_post())
-        transformed_image = preprocessor._resize_to_dimensions(input_image_bytes)
+        synthetic_post = DexbooruPost.synthetic_similarity_search_post(description=form.description)
+        preprocessor = ImagePreprocessor(synthetic_post)
+        transformed_image = preprocessor.resize_image_bytes(input_image_bytes)
 
-        synthetic_post = _build_synthetic_post()
         embeddings = gemini.embed_images(synthetic_post, [transformed_image])
         if not embeddings:
             raise HTTPException(status_code=500, detail="Failed to generate image embedding")
@@ -115,9 +103,9 @@ async def search_similar_post_images(
 
         response_results = [
             PostImageSimilarityResult(
-                post_id=result["post_id"],
-                image_url=result["image_url"],
-                similarity_score=round(result["score"] * 100, 2),
+                post_id=result.post_id,
+                image_url=result.image_url,
+                similarity_score=round(result.score * 100, 2),
             )
             for result in similar_results
         ]

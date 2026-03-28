@@ -3,6 +3,7 @@ import numpy as np
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
+from models.api_responses.post_image_similarity import PostImageSimilarityVectorResult
 from models.application.posts import DexbooruPost
 from utils.config import get_settings
 from utils.logger import get_logger
@@ -47,6 +48,30 @@ class QdrantClientService(AsyncQdrantClient):
 
     def _build_vectors_config(self) -> VectorParams:
         return VectorParams(size=self.output_dimensions, distance=self.SIMILARITY_METRIC)
+
+    @staticmethod
+    def _normalize_query_vector_for_cosine_search(query_vector: list[float]) -> list[float]:
+        vector_np = np.array(query_vector, dtype=np.float32)
+        vector_norm = float(np.linalg.norm(vector_np))
+        if vector_norm > 0 and not np.isclose(vector_norm, 1.0, atol=1e-3):
+            vector_np = vector_np / vector_norm
+        return vector_np.tolist()
+
+    @staticmethod
+    def _map_scored_points_to_similarity_vector_results(points) -> list[PostImageSimilarityVectorResult]:
+        mapped: list[PostImageSimilarityVectorResult] = []
+        for result in points or []:
+            payload = result.payload or {}
+            image_urls = payload.get("image_urls") or []
+            image_url = image_urls[0] if image_urls else ""
+            mapped.append(
+                PostImageSimilarityVectorResult(
+                    post_id=str(result.id),
+                    image_url=image_url,
+                    score=float(result.score),
+                )
+            )
+        return mapped
 
     async def _does_collection_exist(self, collection_name: str) -> bool:
         return await self.collection_exists(collection_name=collection_name)
@@ -96,38 +121,22 @@ class QdrantClientService(AsyncQdrantClient):
         )
         return upsert_result
 
-    async def search_post_image_similarity(self, query_vector: list[float], limit: int) -> list[dict]:
+    async def search_post_image_similarity(self, query_vector: list[float], limit: int) -> list[PostImageSimilarityVectorResult]:
         if not query_vector:
             return []
 
-        vector_np = np.array(query_vector, dtype=np.float32)
-        vector_norm = float(np.linalg.norm(vector_np))
-        if vector_norm > 0 and not np.isclose(vector_norm, 1.0, atol=1e-3):
-            vector_np = vector_np / vector_norm
+        normalized_query = self._normalize_query_vector_for_cosine_search(query_vector)
 
         search_result = await self.query_points(
             collection_name=QdrantClientService.POST_IMAGE_COLLECTION_NAME,
-            query=vector_np.tolist(),
+            query=normalized_query,
             limit=limit,
             with_payload=True,
             timeout=QdrantClientService.POST_IMAGE_SIMILARITY_QUERY_TIMEOUT_SEC,
             score_threshold=QdrantClientService.POST_IMAGE_SIMILARITY_SCORE_THRESHOLD,
         )
 
-        mapped_results: list[dict] = []
-        for result in search_result.points or []:
-            payload = result.payload or {}
-            image_urls = payload.get("image_urls") or []
-            image_url = image_urls[0] if image_urls else ""
-            mapped_results.append(
-                {
-                    "post_id": str(result.id),
-                    "image_url": image_url,
-                    "score": float(result.score),
-                }
-            )
-
-        return mapped_results
+        return self._map_scored_points_to_similarity_vector_results(search_result.points)
 
     async def is_healthy(self) -> bool:
         healthz_url = f"{self._get_client_base_url()}/healthz"

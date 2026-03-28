@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from controllers.api import similarity_posts_images_controller
 from controllers.api.similarity_posts_images_controller import router as similarity_posts_images_router
+from models.api_responses.post_image_similarity import PostImageSimilarityVectorResult
 from services.gemini_client import GeminiClientService
 from services.qdrant_client import QdrantClientService
 
@@ -88,11 +89,11 @@ class TestSimilarityPostsImagesEndpoint:
         mock_qdrant = MagicMock()
         mock_qdrant.search_post_image_similarity = AsyncMock(
             return_value=[
-                {
-                    "post_id": "abc-1",
-                    "image_url": "https://cdn.example.com/a.png",
-                    "score": 0.98456,
-                }
+                PostImageSimilarityVectorResult(
+                    post_id="abc-1",
+                    image_url="https://cdn.example.com/a.png",
+                    score=0.98456,
+                )
             ]
         )
         mock_gemini = MagicMock()
@@ -102,7 +103,7 @@ class TestSimilarityPostsImagesEndpoint:
             patch_similarity_deps(app, mock_qdrant, mock_gemini),
             patch.object(
                 similarity_posts_images_controller.ImagePreprocessor,
-                "_resize_to_dimensions",
+                "resize_image_bytes",
                 return_value=b"resized-image",
             ),
         ):
@@ -127,6 +128,34 @@ class TestSimilarityPostsImagesEndpoint:
             query_vector=[0.1, 0.2, 0.3],
             limit=5,
         )
+        embed_post = mock_gemini.embed_images.call_args[0][0]
+        assert embed_post.description == "not provided"
+
+    def test_synthetic_post_uses_request_description_when_provided(self) -> None:
+        app = _make_app()
+        mock_qdrant = MagicMock()
+        mock_qdrant.search_post_image_similarity = AsyncMock(return_value=[])
+        mock_gemini = MagicMock()
+        mock_gemini.embed_images.return_value = [[0.1, 0.2, 0.3]]
+
+        with (
+            patch_similarity_deps(app, mock_qdrant, mock_gemini),
+            patch.object(
+                similarity_posts_images_controller.ImagePreprocessor,
+                "resize_image_bytes",
+                return_value=b"resized-image",
+            ),
+        ):
+            client = TestClient(app)
+            response = client.post(
+                "/similarity/posts/images/",
+                data={"description": "query caption", "top_closest_match_count": 5},
+                files={"image_file": ("img.png", b"raw-image", "image/png")},
+            )
+
+        assert response.status_code == 200
+        embed_post = mock_gemini.embed_images.call_args[0][0]
+        assert embed_post.description == "query caption"
 
     def test_returns_400_for_unsupported_upload_mime_type(self) -> None:
         app = _make_app()

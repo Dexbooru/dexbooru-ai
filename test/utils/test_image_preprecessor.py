@@ -87,14 +87,14 @@ class TestImagePreprocessorIsUrlFromCdn:
 
 
 class TestImagePreprocessorResizeToDimensions:
-    """Tests for _resize_to_dimensions."""
+    """Tests for resize_image_bytes (wraps _resize_to_dimensions)."""
 
     def test_returns_png_bytes_resized_to_dimensions(self) -> None:
         post = _make_post()
         preprocessor = _preprocessor_with_settings(post, image_resize_width=8, image_resize_height=8)
         image_data = _make_png_bytes(100, 100)
 
-        result = preprocessor._resize_to_dimensions(image_data)
+        result = preprocessor.resize_image_bytes(image_data)
 
         assert isinstance(result, bytes)
         assert len(result) > 0
@@ -107,7 +107,7 @@ class TestImagePreprocessorResizeToDimensions:
         preprocessor = _preprocessor_with_settings(post)
         image_data = _make_png_bytes(5, 5)
 
-        result = preprocessor._resize_to_dimensions(image_data)
+        result = preprocessor.resize_image_bytes(image_data)
 
         assert isinstance(result, bytes)
         img = Image.open(io.BytesIO(result))

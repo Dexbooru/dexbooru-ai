@@ -35,6 +35,9 @@ class ImagePreprocessor:
         image.save(buffer, format=ImagePreprocessor.TARGET_IMAGE_MIME_TYPE.upper())
         return buffer.getvalue()
 
+    def resize_image_bytes(self, image_data: bytes) -> bytes:
+        return self._resize_to_dimensions(image_data)
+
     async def _download_image(self, session: aiohttp.ClientSession, image_url: str) -> tuple[bytes, bool]:
         async with session.get(image_url) as response:
             if response.status != 200:

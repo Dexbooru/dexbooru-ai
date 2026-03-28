@@ -7,6 +7,7 @@ import pytest
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams
 
+from models.api_responses.post_image_similarity import PostImageSimilarityVectorResult
 from models.application.posts import DexbooruPost
 from services.qdrant_client import QdrantClientService
 
@@ -294,11 +295,11 @@ class TestQdrantClientServiceSearchPostImageSimilarity:
         assert call_kw["score_threshold"] == QdrantClientService.POST_IMAGE_SIMILARITY_SCORE_THRESHOLD
         assert call_kw["query"] == pytest.approx([0.6, 0.8], rel=1e-6)
         assert result == [
-            {
-                "post_id": "post-1",
-                "image_url": "https://cdn.example.com/1.png",
-                "score": 0.81234,
-            }
+            PostImageSimilarityVectorResult(
+                post_id="post-1",
+                image_url="https://cdn.example.com/1.png",
+                score=0.81234,
+            )
         ]
 
     def test_keeps_query_vector_when_already_normalized(self) -> None:
@@ -324,4 +325,6 @@ class TestQdrantClientServiceSearchPostImageSimilarity:
 
         result = asyncio.run(svc.search_post_image_similarity(query_vector=[1.0, 0.0], limit=1))
 
-        assert result == [{"post_id": "post-2", "image_url": "", "score": 0.5}]
+        assert result == [
+            PostImageSimilarityVectorResult(post_id="post-2", image_url="", score=0.5),
+        ]
