@@ -1,14 +1,24 @@
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _parse_cors_origins_str(raw: str) -> list[str]:
+    if not raw or not raw.strip():
+        return ["*"]
+    s = raw.strip()
+    if s == "*":
+        return ["*"]
+    return [x.strip() for x in s.split(",") if x.strip()]
 
 
 class ApplicationSettings(BaseSettings):
     # Server settings
     server_name: str = Field(validation_alias="SERVER_NAME")
     server_port: int = Field(validation_alias="SERVER_PORT", default=8001)
+    cors_origins_str: str = Field(default="*", validation_alias="CORS_ORIGINS")
     environment: str = Field(default="development", validation_alias="ENVIRONMENT")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
 
@@ -36,6 +46,11 @@ class ApplicationSettings(BaseSettings):
     # ML / spaCy (tag-rating predictor)
     danbooru_tag_rating_skops_path: Path = Field(validation_alias="DANBOORU_TAG_RATING_SKOPS_PATH")
     spacy_english_model: str = Field(default="en_core_web_md", validation_alias="SPACY_ENGLISH_MODEL")
+
+    @computed_field
+    @property
+    def cors_origins(self) -> list[str]:
+        return _parse_cors_origins_str(self.cors_origins_str)
 
     # environment configuration (system wide takes precedence over local)
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

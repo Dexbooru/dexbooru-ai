@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import APIRouter, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from consumers.new_post_consumer import NewPostConsumer
 from controllers.api.health_controller import router as health_router
@@ -75,6 +76,14 @@ app = FastAPI(
     title=settings.server_name,
     version=application_version,
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=not any(o == "*" for o in settings.cors_origins),
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 api_router = APIRouter(prefix="/api")
