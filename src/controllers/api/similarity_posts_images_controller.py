@@ -10,8 +10,10 @@ from models.api_responses.post_image_similarity import (
 from models.application.posts import DexbooruPost
 from services.gemini_client import GeminiClientService
 from services.qdrant_client import QdrantClientService
+from utils.config import get_settings
 from utils.image_preprecessor import ImagePreprocessor
 from utils.logger import get_logger
+from utils.urls import is_allowed_net_loc
 
 logger = get_logger(__name__)
 
@@ -27,6 +29,11 @@ def _normalize_content_type(content_type: str | None) -> str:
 
 
 async def _load_image_from_url(image_url: str) -> bytes:
+    settings = get_settings()
+
+    if not settings.allow_all_image_domain_destinations and not any(is_allowed_net_loc(image_url, allowed_url) for allowed_url in settings.allowed_image_domain_destinations):
+        raise HTTPException(status_code=403, detail=f"The provided url does not match any allowed host in this list: {', '.join(settings.allowed_image_domain_destinations)}")
+
     async with aiohttp.ClientSession() as session:
         async with session.get(image_url) as response:
             if response.status != 200:

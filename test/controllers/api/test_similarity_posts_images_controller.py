@@ -170,3 +170,127 @@ class TestSimilarityPostsImagesEndpoint:
 
         assert response.status_code == 400
         assert response.json()["detail"] == "Unsupported uploaded image MIME type"
+
+    def test_returns_403_when_image_url_host_is_not_allowed(self) -> None:
+        app = _make_app()
+        mock_qdrant = MagicMock()
+        mock_gemini = MagicMock()
+        mock_settings = MagicMock(
+            allow_all_image_domain_destinations=False,
+            allowed_image_domain_destinations=["cdn.example.com", "images.example.org"],
+        )
+
+        with (
+            patch_similarity_deps(app, mock_qdrant, mock_gemini),
+            patch(
+                "controllers.api.similarity_posts_images_controller.get_settings",
+                return_value=mock_settings,
+            ),
+        ):
+            client = TestClient(app)
+            response = client.post(
+                "/similarity/posts/images/",
+                data={"image_url": "https://evil.example.com/image.png"},
+            )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == ("The provided url does not match any allowed host in this list: cdn.example.com, images.example.org")
+        mock_gemini.embed_images.assert_not_called()
+
+    def test_accepts_image_url_when_host_is_allowed(self) -> None:
+        app = _make_app()
+        mock_qdrant = MagicMock()
+        mock_qdrant.search_post_image_similarity = AsyncMock(return_value=[])
+        mock_gemini = MagicMock()
+        mock_gemini.embed_images.return_value = [[0.1, 0.2, 0.3]]
+        mock_settings = MagicMock(
+            allow_all_image_domain_destinations=False,
+            allowed_image_domain_destinations=["cdn.example.com"],
+        )
+
+        response_mock = AsyncMock()
+        response_mock.status = 200
+        response_mock.headers = {"Content-Type": "image/png"}
+        response_mock.read = AsyncMock(return_value=b"raw-image")
+        response_mock.__aenter__.return_value = response_mock
+        response_mock.__aexit__.return_value = None
+
+        session_mock = MagicMock()
+        session_mock.get.return_value = response_mock
+        session_mock.__aenter__.return_value = session_mock
+        session_mock.__aexit__.return_value = None
+
+        with (
+            patch_similarity_deps(app, mock_qdrant, mock_gemini),
+            patch(
+                "controllers.api.similarity_posts_images_controller.get_settings",
+                return_value=mock_settings,
+            ),
+            patch(
+                "controllers.api.similarity_posts_images_controller.aiohttp.ClientSession",
+                return_value=session_mock,
+            ),
+            patch.object(
+                similarity_posts_images_controller.ImagePreprocessor,
+                "resize_image_bytes",
+                return_value=b"resized-image",
+            ),
+        ):
+            client = TestClient(app)
+            response = client.post(
+                "/similarity/posts/images/",
+                data={"image_url": "https://cdn.example.com/image.png"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"results": []}
+        session_mock.get.assert_called_once_with("https://cdn.example.com/image.png")
+
+    def test_skips_host_allowlist_when_all_domains_are_allowed(self) -> None:
+        app = _make_app()
+        mock_qdrant = MagicMock()
+        mock_qdrant.search_post_image_similarity = AsyncMock(return_value=[])
+        mock_gemini = MagicMock()
+        mock_gemini.embed_images.return_value = [[0.1, 0.2, 0.3]]
+        mock_settings = MagicMock(
+            allow_all_image_domain_destinations=True,
+            allowed_image_domain_destinations=["*"],
+        )
+
+        response_mock = AsyncMock()
+        response_mock.status = 200
+        response_mock.headers = {"Content-Type": "image/png"}
+        response_mock.read = AsyncMock(return_value=b"raw-image")
+        response_mock.__aenter__.return_value = response_mock
+        response_mock.__aexit__.return_value = None
+
+        session_mock = MagicMock()
+        session_mock.get.return_value = response_mock
+        session_mock.__aenter__.return_value = session_mock
+        session_mock.__aexit__.return_value = None
+
+        with (
+            patch_similarity_deps(app, mock_qdrant, mock_gemini),
+            patch(
+                "controllers.api.similarity_posts_images_controller.get_settings",
+                return_value=mock_settings,
+            ),
+            patch(
+                "controllers.api.similarity_posts_images_controller.aiohttp.ClientSession",
+                return_value=session_mock,
+            ),
+            patch.object(
+                similarity_posts_images_controller.ImagePreprocessor,
+                "resize_image_bytes",
+                return_value=b"resized-image",
+            ),
+        ):
+            client = TestClient(app)
+            response = client.post(
+                "/similarity/posts/images/",
+                data={"image_url": "https://any-host.example/image.png"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"results": []}
+        session_mock.get.assert_called_once_with("https://any-host.example/image.png")

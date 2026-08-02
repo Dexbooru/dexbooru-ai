@@ -19,6 +19,7 @@ class ApplicationSettings(BaseSettings):
     server_name: str = Field(validation_alias="SERVER_NAME")
     server_port: int = Field(validation_alias="SERVER_PORT", default=8001)
     cors_origins_str: str = Field(default="*", validation_alias="CORS_ORIGINS")
+    allowed_image_domain_destinations_str: str = Field(default="*", validation_alias="ALLOWED_IMAGE_DOMAIN_DESTINATIONS")
     environment: str = Field(default="development", validation_alias="ENVIRONMENT")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
 
@@ -51,6 +52,15 @@ class ApplicationSettings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return _parse_cors_origins_str(self.cors_origins_str)
+
+    @computed_field
+    @property
+    def allowed_image_domain_destinations(self) -> list[str]:
+        return _parse_cors_origins_str(self.allowed_image_domain_destinations_str)
+
+    @property
+    def allow_all_image_domain_destinations(self) -> bool:
+        return len(self.allowed_image_domain_destinations) == 1 and self.allowed_image_domain_destinations[0] == "*"
 
     # environment configuration (system wide takes precedence over local)
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

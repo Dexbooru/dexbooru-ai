@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from consumers.new_post_consumer import NewPostConsumer
 from controllers.api.health_controller import router as health_router
+from controllers.api.similarity_posts_images_config_controller import router as similarity_post_images_config_router
 from controllers.api.similarity_posts_images_controller import router as similarity_posts_images_router
 from controllers.api.tag_rating_controller import router as tag_rating_router
 from core.consumer import BaseConsumer
@@ -88,6 +89,7 @@ app.add_middleware(
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health_router)
+api_router.include_router(similarity_post_images_config_router)
 api_router.include_router(similarity_posts_images_router)
 api_router.include_router(tag_rating_router)
 
