@@ -29,7 +29,7 @@ class TestPostUpdatedConsumerInit:
     """Tests for PostUpdatedConsumer.__init__."""
 
     def test_sets_queue_name_and_routing_key(self) -> None:
-        consumer = PostUpdatedConsumer("amqp://x/", "my_exchange")
+        consumer = PostUpdatedConsumer("amqp://x/", "my_exchange", qdrant=MagicMock(), gemini=MagicMock())
         assert consumer.queue_name == queue_name == "post_embedding_sync_updated"
         assert consumer.exchange_name == "my_exchange"
         assert consumer.routing_key == routing_key == "post.embedding_sync.updated"

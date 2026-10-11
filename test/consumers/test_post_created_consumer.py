@@ -27,7 +27,7 @@ class TestPostCreatedConsumerInit:
     """Tests for PostCreatedConsumer.__init__."""
 
     def test_sets_queue_name_and_routing_key(self) -> None:
-        consumer = PostCreatedConsumer("amqp://x/", "my_exchange")
+        consumer = PostCreatedConsumer("amqp://x/", "my_exchange", qdrant=MagicMock(), gemini=MagicMock())
         assert consumer.queue_name == queue_name == "post_embedding_sync_created"
         assert consumer.exchange_name == "my_exchange"
         assert consumer.routing_key == routing_key == "post.embedding_sync.created"
@@ -39,11 +39,6 @@ class TestPostCreatedConsumerInit:
         consumer = PostCreatedConsumer("amqp://x/", "ex", qdrant=mock_qdrant, gemini=mock_gemini)
         assert consumer.qdrant_service is mock_qdrant
         assert consumer.gemini_service is mock_gemini
-
-    def test_accepts_none_services(self) -> None:
-        consumer = PostCreatedConsumer("amqp://x/", "ex", qdrant=None, gemini=None)
-        assert consumer.qdrant_service is None
-        assert consumer.gemini_service is None
 
 
 class TestPostCreatedConsumerOnMessage:

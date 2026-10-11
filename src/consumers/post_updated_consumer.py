@@ -1,15 +1,12 @@
 import asyncio
-from typing import TYPE_CHECKING
 
 from pika.channel import Channel
 from pika.spec import Basic, BasicProperties
 
 from consumers.post_embedding_sync_consumer import BasePostEmbeddingSyncConsumer
 from models.application.posts import DexbooruPost
-
-if TYPE_CHECKING:
-    from services.gemini_client import GeminiClientService
-    from services.qdrant_client import QdrantClientService
+from services.gemini_client import GeminiClientService
+from services.qdrant_client import QdrantClientService
 
 queue_name = "post_embedding_sync_updated"
 routing_key = "post.embedding_sync.updated"
@@ -23,18 +20,18 @@ class PostUpdatedConsumer(BasePostEmbeddingSyncConsumer):
         amqp_url: str,
         exchange_name: str,
         *,
+        qdrant: QdrantClientService,
+        gemini: GeminiClientService,
         event_loop: asyncio.AbstractEventLoop | None = None,
-        qdrant: "QdrantClientService | None" = None,
-        gemini: "GeminiClientService | None" = None,
     ):
         super().__init__(
             amqp_url,
             queue_name,
             exchange_name,
             routing_key=routing_key,
-            event_loop=event_loop,
             qdrant=qdrant,
             gemini=gemini,
+            event_loop=event_loop,
         )
 
     async def on_message(

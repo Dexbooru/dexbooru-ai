@@ -77,15 +77,6 @@ def _sync(consumer: _SyncConsumer, post: DexbooruPost, *, delete_when_empty: boo
     asyncio.run(consumer.sync_post_embeddings(post, delete_when_empty=delete_when_empty))
 
 
-class TestSyncPostEmbeddingsDependencies:
-    @pytest.mark.parametrize(("qdrant", "gemini"), [(None, MagicMock()), (MagicMock(), None)])
-    def test_raises_when_service_missing(self, qdrant, gemini) -> None:  # noqa: ANN001
-        consumer = _SyncConsumer("amqp://x/", "q", "ex", routing_key="rk", qdrant=qdrant, gemini=gemini)
-
-        with pytest.raises(RuntimeError, match="not initialized"):
-            _sync(consumer, _make_post(), delete_when_empty=False)
-
-
 class TestSyncPostEmbeddingsSuccess:
     def test_upserts_text_then_images_and_logs_summary(self, caplog: pytest.LogCaptureFixture) -> None:
         qdrant, gemini = _make_qdrant(), _make_gemini()
