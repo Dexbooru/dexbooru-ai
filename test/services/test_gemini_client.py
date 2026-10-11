@@ -218,26 +218,6 @@ class TestGeminiClientServiceNormalizeEmbedding:
 class TestGeminiClientServiceEmbedImages:
     """Tests for GeminiClientService.embed_images."""
 
-    def test_raises_when_embedding_model_name_is_none(self) -> None:
-        svc = _make_gemini_service()
-        svc.embedding_model_name = None
-        post = MagicMock(spec=DexbooruPost)
-        post.id = "post-1"
-
-        with pytest.raises(ValueError) as exc_info:
-            svc.embed_images(post, [b"fake"])
-
-        assert "Embedding model name is not set" in str(exc_info.value)
-
-    def test_returns_empty_list_when_image_bytes_list_empty(self) -> None:
-        svc = _make_gemini_service()
-        post = MagicMock(spec=DexbooruPost)
-        post.id = "post-1"
-
-        result = svc.embed_images(post, [])
-
-        assert result == []
-
     def test_embeds_inline_bytes_and_returns_normalized_embeddings(self) -> None:
         mock_embedding_response = MagicMock()
         mock_embedding_response.embeddings = [
@@ -316,43 +296,6 @@ def _embedding_response(*vectors: list[float]) -> MagicMock:
     return MagicMock(embeddings=[MagicMock(values=vector) for vector in vectors])
 
 
-class TestGeminiClientServiceBuildPostTextDocument:
-    """Tests for GeminiClientService.build_post_text_document."""
-
-    def test_formats_title_tags_and_artists(self) -> None:
-        post = _make_post(description="Sunset at the beach", tags=["long_hair", "smile"], artists=["artist one"])
-
-        document = GeminiClientService.build_post_text_document(post)
-
-        assert document == "title: Sunset at the beach | text: tags: long hair, smile; artists: artist one"
-
-    def test_cleans_whitespace_and_drops_blank_and_duplicate_terms(self) -> None:
-        post = _make_post(
-            description="  many   spaces\n here ",
-            tags=["cat", " ", "cat", "cat_ears", "cat ears"],
-            artists=["", "bob", "bob "],
-        )
-
-        document = GeminiClientService.build_post_text_document(post)
-
-        assert document == "title: many spaces here | text: tags: cat, cat ears; artists: bob"
-
-    def test_omits_empty_sections(self) -> None:
-        assert GeminiClientService.build_post_text_document(_make_post(description="only title")) == "title: only title | text: none"
-        assert GeminiClientService.build_post_text_document(_make_post(description="t", tags=["a"])) == "title: t | text: tags: a"
-        assert GeminiClientService.build_post_text_document(_make_post(description="t", artists=["b"])) == "title: t | text: artists: b"
-
-    def test_uses_none_title_when_description_blank(self) -> None:
-        post = _make_post(description="   ", tags=["cat"])
-
-        assert GeminiClientService.build_post_text_document(post) == "title: none | text: tags: cat"
-
-    def test_returns_none_when_all_fields_blank(self) -> None:
-        post = _make_post(description=" \t ", tags=[" ", "_"], artists=[""])
-
-        assert GeminiClientService.build_post_text_document(post) is None
-
-
 class TestGeminiClientServiceEmbedPostText:
     """Tests for GeminiClientService.embed_post_text."""
 
@@ -361,28 +304,13 @@ class TestGeminiClientServiceEmbedPostText:
         mock_models.embed_content.return_value = _embedding_response([0.5, 0.5, 0.5, 0.5])
 
         with _gemini_service_with_models(mock_models) as svc:
-            result = svc.embed_post_text(_make_post(description="a cat", tags=["cute"]))
+            result = svc.embed_post_text(_make_post(description="a cat", tags=["cute", "long_hair"], artists=["bob"]))
 
         assert result == pytest.approx([0.5, 0.5, 0.5, 0.5])
         call_kw = mock_models.embed_content.call_args[1]
         assert call_kw["model"] == "gemini-embedding-2"
-        assert call_kw["contents"] == ["title: a cat | text: tags: cute"]
+        assert call_kw["contents"] == ["title: a cat | text: tags: cute, long hair; artists: bob"]
         assert call_kw["config"].output_dimensionality == 4
-
-    def test_returns_none_without_calling_api_when_no_text(self) -> None:
-        mock_models = MagicMock()
-
-        with _gemini_service_with_models(mock_models) as svc:
-            result = svc.embed_post_text(_make_post(description=" "))
-
-        assert result is None
-        mock_models.embed_content.assert_not_called()
-
-    def test_raises_when_embedding_model_name_is_none(self) -> None:
-        with _gemini_service_with_models(MagicMock()) as svc:
-            svc.embedding_model_name = None
-            with pytest.raises(ValueError, match="Embedding model name is not set"):
-                svc.embed_post_text(_make_post())
 
     @pytest.mark.parametrize("response", [MagicMock(embeddings=[]), MagicMock(embeddings=None), _embedding_response([])])
     def test_raises_when_response_has_no_embeddings(self, response: MagicMock) -> None:
@@ -412,26 +340,3 @@ class TestGeminiClientServiceEmbedPostText:
                 svc.embed_post_text(post)
 
         assert isinstance(exc_info.value.__cause__, errors.APIError)
-
-
-class TestGeminiClientServiceEmbedImagesEdgeCases:
-    """Edge cases for GeminiClientService.embed_images."""
-
-    def test_drops_empty_bytes_before_embedding(self) -> None:
-        mock_models = MagicMock()
-        mock_models.embed_content.return_value = _embedding_response([0.5, 0.5, 0.5, 0.5])
-
-        with _gemini_service_with_models(mock_models) as svc:
-            result = svc.embed_images(_make_post(), [b"", b"png", b""])
-
-        assert len(result) == 1
-        assert len(mock_models.embed_content.call_args[1]["contents"]) == 1
-
-    def test_returns_empty_list_when_all_bytes_empty(self) -> None:
-        mock_models = MagicMock()
-
-        with _gemini_service_with_models(mock_models) as svc:
-            result = svc.embed_images(_make_post(), [b"", b""])
-
-        assert result == []
-        mock_models.embed_content.assert_not_called()

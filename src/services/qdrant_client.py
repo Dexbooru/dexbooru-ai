@@ -3,7 +3,7 @@ from uuid import UUID
 import aiohttp
 import numpy as np
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, PointIdsList, PointStruct, UpdateResult, VectorParams
+from qdrant_client.models import Distance, PointStruct, UpdateResult, VectorParams
 
 from models.api_responses.post_image_similarity import PostImageSimilarityVectorResult
 from models.application.posts import DexbooruPost
@@ -136,20 +136,6 @@ class QdrantClientService(AsyncQdrantClient):
         )
         self._log_write_result("upsert", QdrantClientService.POST_TEXT_COLLECTION_NAME, post.id, upsert_result)
         return upsert_result
-
-    async def _delete_post_point(self, collection_name: str, post_id: UUID) -> UpdateResult:
-        delete_result = await self.delete(
-            collection_name=collection_name,
-            points_selector=PointIdsList(points=[post_id]),
-        )
-        self._log_write_result("delete", collection_name, post_id, delete_result)
-        return delete_result
-
-    async def delete_post_image(self, post_id: UUID) -> UpdateResult:
-        return await self._delete_post_point(QdrantClientService.POST_IMAGE_COLLECTION_NAME, post_id)
-
-    async def delete_post_text(self, post_id: UUID) -> UpdateResult:
-        return await self._delete_post_point(QdrantClientService.POST_TEXT_COLLECTION_NAME, post_id)
 
     async def search_post_image_similarity(self, query_vector: list[float], limit: int) -> list[PostImageSimilarityVectorResult]:
         if not query_vector:

@@ -28,18 +28,21 @@ class ImagePreprocessor:
     def _is_url_from_cdn(self, image_url: str) -> bool:
         return image_url.startswith(self.cdn_base_url)
 
-    def _resize_to_dimensions(self, image_data: bytes) -> bytes:
-        image = Image.open(io.BytesIO(image_data))
-        image = image.resize((self.image_resize_width, self.image_resize_height))
-        buffer = io.BytesIO()
-        image.save(buffer, format=ImagePreprocessor.TARGET_IMAGE_MIME_TYPE.upper())
-        return buffer.getvalue()
-
-    def cdn_image_urls(self) -> list[str]:
-        return [url for url in self.post.image_urls if self._is_url_from_cdn(url)]
-
-    def resize_image_bytes(self, image_data: bytes) -> bytes:
-        return self._resize_to_dimensions(image_data)
+    def resize_image_bytes(self, image_data: bytes) -> bytes | None:
+        try:
+            image = Image.open(io.BytesIO(image_data))
+            image = image.resize((self.image_resize_width, self.image_resize_height))
+            buffer = io.BytesIO()
+            image.save(buffer, format=ImagePreprocessor.TARGET_IMAGE_MIME_TYPE.upper())
+            return buffer.getvalue()
+        except (OSError, ValueError) as error:
+            logger.warning(
+                "image resize failed: error=%s post_id=%s size=%s",
+                type(error).__name__,
+                self.post.id,
+                len(image_data),
+            )
+            return None
 
     async def _download_image(self, session: aiohttp.ClientSession, image_url: str) -> tuple[bytes, bool]:
         try:
@@ -77,18 +80,6 @@ class ImagePreprocessor:
         logger.debug("image downloaded url=%s size=%s", image_url, len(image_data))
         return image_data, True
 
-    def _try_resize(self, image_data: bytes) -> bytes | None:
-        try:
-            return self._resize_to_dimensions(image_data)
-        except (OSError, ValueError) as error:
-            logger.warning(
-                "image resize failed: error=%s post_id=%s size=%s",
-                type(error).__name__,
-                self.post.id,
-                len(image_data),
-            )
-            return None
-
     async def transform(self) -> list[bytes]:
         logger.info(
             "transform started post_id=%s image_count=%s",
@@ -96,7 +87,7 @@ class ImagePreprocessor:
             len(self.post.image_urls),
         )
 
-        urls_to_download = self.cdn_image_urls()
+        urls_to_download = [url for url in self.post.image_urls if self._is_url_from_cdn(url)]
         skipped = len(self.post.image_urls) - len(urls_to_download)
         if skipped:
             logger.warning(
@@ -119,7 +110,7 @@ class ImagePreprocessor:
             if not success:
                 failed_downloads += 1
                 continue
-            resized = await asyncio.to_thread(self._try_resize, image_data)
+            resized = await asyncio.to_thread(self.resize_image_bytes, image_data)
             if resized is None:
                 failed_resizes += 1
                 continue

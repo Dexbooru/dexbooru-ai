@@ -87,7 +87,7 @@ class TestImagePreprocessorIsUrlFromCdn:
 
 
 class TestImagePreprocessorResizeToDimensions:
-    """Tests for resize_image_bytes (wraps _resize_to_dimensions)."""
+    """Tests for resize_image_bytes."""
 
     def test_returns_png_bytes_resized_to_dimensions(self) -> None:
         post = _make_post()
@@ -353,24 +353,13 @@ def _fake_response_cm(status: int = 200, content_type: str = "image/png", body: 
     return cm
 
 
-class TestImagePreprocessorCdnImageUrls:
-    """Tests for cdn_image_urls."""
-
-    def test_returns_only_cdn_urls_in_order(self) -> None:
-        post = _make_post(
-            image_urls=[
-                "https://cdn.example.com/a.png",
-                "https://other.com/b.png",
-                "https://cdn.example.com/c.png",
-            ]
-        )
-        preprocessor = _preprocessor_with_settings(post, cdn_base_url="https://cdn.example.com")
-
-        assert preprocessor.cdn_image_urls() == ["https://cdn.example.com/a.png", "https://cdn.example.com/c.png"]
-
-
 class TestImagePreprocessorEdgeCases:
     """Download and decode failures are isolated per image."""
+
+    def test_resize_returns_none_on_undecodable_bytes(self) -> None:
+        preprocessor = _preprocessor_with_settings(_make_post())
+
+        assert preprocessor.resize_image_bytes(b"not an image") is None
 
     def test_download_returns_false_on_empty_body(self) -> None:
         preprocessor = _preprocessor_with_settings(_make_post())

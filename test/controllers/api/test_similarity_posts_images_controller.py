@@ -157,6 +157,20 @@ class TestSimilarityPostsImagesEndpoint:
         embed_post = mock_gemini.embed_images.call_args[0][0]
         assert embed_post.description == "query caption"
 
+    def test_returns_400_when_uploaded_image_cannot_be_decoded(self) -> None:
+        app = _make_app()
+        mock_gemini = MagicMock()
+        with patch_similarity_deps(app, MagicMock(), mock_gemini):
+            client = TestClient(app)
+            response = client.post(
+                "/similarity/posts/images/",
+                files={"image_file": ("img.png", b"not an image", "image/png")},
+            )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "The provided image could not be decoded"
+        mock_gemini.embed_images.assert_not_called()
+
     def test_returns_400_for_unsupported_upload_mime_type(self) -> None:
         app = _make_app()
         mock_qdrant = MagicMock()

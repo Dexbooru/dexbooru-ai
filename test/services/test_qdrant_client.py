@@ -282,30 +282,6 @@ class TestQdrantClientServiceAddPostText:
         assert point.payload == {}
 
 
-class TestQdrantClientServiceDeletePostPoints:
-    """Tests for QdrantClientService.delete_post_image and delete_post_text."""
-
-    @pytest.mark.parametrize(
-        ("method_name", "collection_name"),
-        [
-            ("delete_post_image", QdrantClientService.POST_IMAGE_COLLECTION_NAME),
-            ("delete_post_text", QdrantClientService.POST_TEXT_COLLECTION_NAME),
-        ],
-    )
-    def test_deletes_point_by_post_id(self, method_name: str, collection_name: str) -> None:
-        svc = _make_service_with_mock_http()
-        mock_result = MagicMock(operation_id=9, status=MagicMock())
-        svc.delete = AsyncMock(return_value=mock_result)
-        post_id = uuid4()
-
-        result = asyncio.run(getattr(svc, method_name)(post_id))
-
-        assert result is mock_result
-        call_kw = svc.delete.call_args[1]
-        assert call_kw["collection_name"] == collection_name
-        assert call_kw["points_selector"].points == [post_id]
-
-
 class TestQdrantClientServiceBaseCollectionNames:
     def test_includes_post_image_and_post_text(self) -> None:
         assert QdrantClientService.BASE_COLLECTION_NAMES == ["post_image", "post_text"]

@@ -1,8 +1,9 @@
 import asyncio
 import time
-from enum import StrEnum
 from uuid import UUID
 
+from pika.channel import Channel
+from pika.spec import Basic, BasicProperties
 from qdrant_client.models import UpdateResult, UpdateStatus
 
 from core.consumer import BaseConsumer
@@ -14,23 +15,17 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-
-class EmbeddingSyncOutcome(StrEnum):
-    UPSERTED = "upserted"
-    DELETED = "deleted"
-    SKIPPED = "skipped"
+# One queue for created and updated events keeps them in publish order, so a delayed create can't overwrite a newer edit
+queue_name = "post_embedding_sync"
+routing_key = "post.embedding_sync.*"
 
 
-class BasePostEmbeddingSyncConsumer(BaseConsumer):
-    EVENT_NAME: str
-
+class PostEmbeddingSyncConsumer(BaseConsumer):
     def __init__(
         self,
         amqp_url: str,
-        queue_name: str,
         exchange_name: str,
         *,
-        routing_key: str,
         qdrant: QdrantClientService,
         gemini: GeminiClientService,
         event_loop: asyncio.AbstractEventLoop | None = None,
@@ -47,80 +42,57 @@ class BasePostEmbeddingSyncConsumer(BaseConsumer):
         self.gemini_service = gemini
 
     @staticmethod
-    def _raise_if_write_failed(operation: str, collection_name: str, post_id: UUID, result: UpdateResult) -> None:
+    def _raise_if_write_failed(collection_name: str, post_id: UUID, result: UpdateResult) -> None:
         if result.status != UpdateStatus.COMPLETED:
-            raise RuntimeError(f"Qdrant {operation} on collection {collection_name} failed for post {post_id}, with operation id {result.operation_id} and status {result.status}")
+            raise RuntimeError(f"Qdrant upsert on collection {collection_name} failed for post {post_id}, with operation id {result.operation_id} and status {result.status}")
 
-    async def _sync_post_text(self, post: DexbooruPost, *, delete_when_empty: bool) -> EmbeddingSyncOutcome:
-        qdrant, gemini = self.qdrant_service, self.gemini_service
-        collection_name = qdrant.POST_TEXT_COLLECTION_NAME
-
-        text_embedding = await asyncio.to_thread(gemini.embed_post_text, post)
-        if text_embedding is None:
-            if not delete_when_empty:
-                logger.warning("post has no text content, skipping text vector post_id=%s", post.id)
-                return EmbeddingSyncOutcome.SKIPPED
-
-            logger.warning("post has no text content, deleting text vector post_id=%s", post.id)
-            self._raise_if_write_failed("delete", collection_name, post.id, await qdrant.delete_post_text(post.id))
-            return EmbeddingSyncOutcome.DELETED
-
-        self._raise_if_write_failed("upsert", collection_name, post.id, await qdrant.add_post_text(post, text_embedding))
-        return EmbeddingSyncOutcome.UPSERTED
-
-    async def _sync_post_images(self, post: DexbooruPost, *, delete_when_empty: bool) -> tuple[EmbeddingSyncOutcome, int]:
-        qdrant, gemini = self.qdrant_service, self.gemini_service
-        collection_name = qdrant.POST_IMAGE_COLLECTION_NAME
-
-        image_transformer = image_preprecessor.ImagePreprocessor(post)
-        cdn_image_urls = image_transformer.cdn_image_urls()
-        if not cdn_image_urls:
-            if not delete_when_empty:
-                logger.warning(
-                    "post has no CDN images, skipping image vector post_id=%s image_urls=%s",
-                    post.id,
-                    len(post.image_urls),
-                )
-                return EmbeddingSyncOutcome.SKIPPED, 0
-
-            logger.warning(
-                "post has no CDN images, deleting image vector post_id=%s image_urls=%s",
-                post.id,
-                len(post.image_urls),
-            )
-            self._raise_if_write_failed("delete", collection_name, post.id, await qdrant.delete_post_image(post.id))
-            return EmbeddingSyncOutcome.DELETED, 0
-
-        image_bytes_list = await image_transformer.transform()
-        image_embeddings = await asyncio.to_thread(gemini.embed_images, post, image_bytes_list)
-        if not image_embeddings:
-            raise RuntimeError(f"No usable images for post {post.id}: none of its {len(cdn_image_urls)} CDN image(s) could be downloaded or decoded")
-
-        self._raise_if_write_failed("upsert", collection_name, post.id, await qdrant.add_post_image(post, image_embeddings))
-        return EmbeddingSyncOutcome.UPSERTED, len(image_bytes_list)
-
-    async def sync_post_embeddings(self, post: DexbooruPost, *, delete_when_empty: bool) -> None:
-        started_at = time.perf_counter()
-        logger.info(
-            "post embedding sync started post_id=%s event=%s description_chars=%s tags=%s artists=%s image_urls=%s",
+    async def _sync_post_text(self, post: DexbooruPost) -> None:
+        text_embedding = await asyncio.to_thread(self.gemini_service.embed_post_text, post)
+        self._raise_if_write_failed(
+            QdrantClientService.POST_TEXT_COLLECTION_NAME,
             post.id,
-            self.EVENT_NAME,
-            len(post.description),
-            len(post.tags),
-            len(post.artists),
-            len(post.image_urls),
+            await self.qdrant_service.add_post_text(post, text_embedding),
         )
 
-        text_outcome = await self._sync_post_text(post, delete_when_empty=delete_when_empty)
-        image_outcome, images_used = await self._sync_post_images(post, delete_when_empty=delete_when_empty)
+    async def _sync_post_images(self, post: DexbooruPost) -> int:
+        image_bytes_list = await image_preprecessor.ImagePreprocessor(post).transform()
+        if not image_bytes_list:
+            raise RuntimeError(f"No usable images for post {post.id}: none of its {len(post.image_urls)} image(s) could be downloaded or decoded")
+
+        image_embeddings = await asyncio.to_thread(self.gemini_service.embed_images, post, image_bytes_list)
+        self._raise_if_write_failed(
+            QdrantClientService.POST_IMAGE_COLLECTION_NAME,
+            post.id,
+            await self.qdrant_service.add_post_image(post, image_embeddings),
+        )
+        return len(image_bytes_list)
+
+    async def on_message(
+        self,
+        channel: Channel,
+        method: Basic.Deliver,
+        properties: BasicProperties,
+        body: DexbooruPost,
+    ) -> None:
+        started_at = time.perf_counter()
+        logger.info(
+            "post embedding sync started post_id=%s routing_key=%s description_chars=%s tags=%s artists=%s image_urls=%s",
+            body.id,
+            method.routing_key,
+            len(body.description),
+            len(body.tags),
+            len(body.artists),
+            len(body.image_urls),
+        )
+
+        await self._sync_post_text(body)
+        images_used = await self._sync_post_images(body)
 
         logger.info(
-            "post embedding sync completed post_id=%s event=%s text=%s images=%s images_used=%s/%s duration_ms=%.1f",
-            post.id,
-            self.EVENT_NAME,
-            text_outcome,
-            image_outcome,
+            "post embedding sync completed post_id=%s routing_key=%s images_used=%s/%s duration_ms=%.1f",
+            body.id,
+            method.routing_key,
             images_used,
-            len(post.image_urls),
+            len(body.image_urls),
             (time.perf_counter() - started_at) * 1000,
         )
