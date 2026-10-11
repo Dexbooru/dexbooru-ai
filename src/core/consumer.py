@@ -99,7 +99,7 @@ class BaseConsumer(ABC, threading.Thread):
             )
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
             return
-        except ValueError as error:
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
             logger.error(
                 "message is not valid JSON, nacking queue=%s routing_key=%s delivery_tag=%s error=%s",
                 self.queue_name,

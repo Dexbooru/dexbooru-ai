@@ -119,7 +119,7 @@ class ImagePreprocessor:
             if not success:
                 failed_downloads += 1
                 continue
-            resized = self._try_resize(image_data)
+            resized = await asyncio.to_thread(self._try_resize, image_data)
             if resized is None:
                 failed_resizes += 1
                 continue

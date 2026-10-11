@@ -55,7 +55,7 @@ class BasePostEmbeddingSyncConsumer(BaseConsumer):
         qdrant, gemini = self.qdrant_service, self.gemini_service
         collection_name = qdrant.POST_TEXT_COLLECTION_NAME
 
-        text_embedding = gemini.embed_post_text(post)
+        text_embedding = await asyncio.to_thread(gemini.embed_post_text, post)
         if text_embedding is None:
             if not delete_when_empty:
                 logger.warning("post has no text content, skipping text vector post_id=%s", post.id)
@@ -92,7 +92,7 @@ class BasePostEmbeddingSyncConsumer(BaseConsumer):
             return EmbeddingSyncOutcome.DELETED, 0
 
         image_bytes_list = await image_transformer.transform()
-        image_embeddings = gemini.embed_images(post, image_bytes_list)
+        image_embeddings = await asyncio.to_thread(gemini.embed_images, post, image_bytes_list)
         if not image_embeddings:
             raise RuntimeError(f"No usable images for post {post.id}: none of its {len(cdn_image_urls)} CDN image(s) could be downloaded or decoded")
 

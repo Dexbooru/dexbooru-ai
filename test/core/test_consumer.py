@@ -148,6 +148,16 @@ class TestBaseConsumerOnMessageCallback:
         channel.basic_ack.assert_not_called()
         channel.basic_nack.assert_called_once_with(delivery_tag=1, requeue=False)
 
+    def test_nacks_when_body_is_not_utf8(self) -> None:
+        consumer = ConcreteConsumer("amqp://x/", "q", "ex")
+        channel = MagicMock()
+        method = Basic.Deliver(delivery_tag=1, redelivered=False, exchange="ex", routing_key="rk")
+
+        consumer._on_message_callback(channel, method, BasicProperties(), b"\xff\xfe")
+
+        assert len(consumer.received) == 0
+        channel.basic_nack.assert_called_once_with(delivery_tag=1, requeue=False)
+
     def test_nacks_when_validation_fails_with_message_model(self) -> None:
         consumer = ConcreteConsumer("amqp://x/", "q", "ex", message_model=_TestMessageModel)
         channel = MagicMock()
