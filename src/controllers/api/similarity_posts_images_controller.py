@@ -98,6 +98,8 @@ async def search_similar_post_images(
         synthetic_post = DexbooruPost.synthetic_similarity_search_post(description=form.description)
         preprocessor = ImagePreprocessor(synthetic_post)
         transformed_image = preprocessor.resize_image_bytes(input_image_bytes)
+        if transformed_image is None:
+            raise HTTPException(status_code=400, detail="The provided image could not be decoded")
 
         embeddings = gemini.embed_images(synthetic_post, [transformed_image])
         if not embeddings:

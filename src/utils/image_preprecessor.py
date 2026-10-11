@@ -28,38 +28,57 @@ class ImagePreprocessor:
     def _is_url_from_cdn(self, image_url: str) -> bool:
         return image_url.startswith(self.cdn_base_url)
 
-    def _resize_to_dimensions(self, image_data: bytes) -> bytes:
-        image = Image.open(io.BytesIO(image_data))
-        image = image.resize((self.image_resize_width, self.image_resize_height))
-        buffer = io.BytesIO()
-        image.save(buffer, format=ImagePreprocessor.TARGET_IMAGE_MIME_TYPE.upper())
-        return buffer.getvalue()
-
-    def resize_image_bytes(self, image_data: bytes) -> bytes:
-        return self._resize_to_dimensions(image_data)
+    def resize_image_bytes(self, image_data: bytes) -> bytes | None:
+        try:
+            image = Image.open(io.BytesIO(image_data))
+            image = image.resize((self.image_resize_width, self.image_resize_height))
+            buffer = io.BytesIO()
+            image.save(buffer, format=ImagePreprocessor.TARGET_IMAGE_MIME_TYPE.upper())
+            return buffer.getvalue()
+        except (OSError, ValueError) as error:
+            logger.warning(
+                "image resize failed: error=%s post_id=%s size=%s",
+                type(error).__name__,
+                self.post.id,
+                len(image_data),
+            )
+            return None
 
     async def _download_image(self, session: aiohttp.ClientSession, image_url: str) -> tuple[bytes, bool]:
-        async with session.get(image_url) as response:
-            if response.status != 200:
-                logger.warning(
-                    "image download failed: status=%s url=%s",
-                    response.status,
-                    image_url,
-                )
-                return b"", False
+        try:
+            async with session.get(image_url) as response:
+                if response.status != 200:
+                    logger.warning(
+                        "image download failed: status=%s url=%s",
+                        response.status,
+                        image_url,
+                    )
+                    return b"", False
 
-            response_mime_type = response.headers.get("Content-Type", "").lower().strip()
-            if not self._is_mimetype_supported_image(response_mime_type):
-                logger.warning(
-                    "image download skipped: unsupported mimetype=%s url=%s",
-                    response_mime_type or "(none)",
-                    image_url,
-                )
-                return b"", False
+                response_mime_type = response.headers.get("Content-Type", "").lower().strip()
+                if not self._is_mimetype_supported_image(response_mime_type):
+                    logger.warning(
+                        "image download skipped: unsupported mimetype=%s url=%s",
+                        response_mime_type or "(none)",
+                        image_url,
+                    )
+                    return b"", False
 
-            image_data = await response.read()
-            logger.debug("image downloaded url=%s size=%s", image_url, len(image_data))
-            return image_data, True
+                image_data = await response.read()
+        except (aiohttp.ClientError, TimeoutError) as error:
+            logger.warning(
+                "image download failed: error=%s url=%s",
+                type(error).__name__,
+                image_url,
+            )
+            return b"", False
+
+        if not image_data:
+            logger.warning("image download failed: empty body url=%s", image_url)
+            return b"", False
+
+        logger.debug("image downloaded url=%s size=%s", image_url, len(image_data))
+        return image_data, True
 
     async def transform(self) -> list[bytes]:
         logger.info(
@@ -86,18 +105,23 @@ class ImagePreprocessor:
 
         result: list[bytes] = []
         failed_downloads = 0
+        failed_resizes = 0
         for image_data, success in download_results:
             if not success:
                 failed_downloads += 1
                 continue
-            resized = self._resize_to_dimensions(image_data)
+            resized = await asyncio.to_thread(self.resize_image_bytes, image_data)
+            if resized is None:
+                failed_resizes += 1
+                continue
             result.append(resized)
             logger.debug("resized image size=%s", len(resized))
 
-        if failed_downloads:
+        if failed_downloads or failed_resizes:
             logger.warning(
-                "transform had %s failed download(s) post_id=%s",
+                "transform had %s failed download(s) and %s failed resize(s) post_id=%s",
                 failed_downloads,
+                failed_resizes,
                 self.post.id,
             )
         logger.info(

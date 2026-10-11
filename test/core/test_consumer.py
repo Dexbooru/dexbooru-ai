@@ -1,6 +1,7 @@
 """Unit tests for core.consumer.BaseConsumer."""
 
 import asyncio
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -147,6 +148,16 @@ class TestBaseConsumerOnMessageCallback:
         channel.basic_ack.assert_not_called()
         channel.basic_nack.assert_called_once_with(delivery_tag=1, requeue=False)
 
+    def test_nacks_when_body_is_not_utf8(self) -> None:
+        consumer = ConcreteConsumer("amqp://x/", "q", "ex")
+        channel = MagicMock()
+        method = Basic.Deliver(delivery_tag=1, redelivered=False, exchange="ex", routing_key="rk")
+
+        consumer._on_message_callback(channel, method, BasicProperties(), b"\xff\xfe")
+
+        assert len(consumer.received) == 0
+        channel.basic_nack.assert_called_once_with(delivery_tag=1, requeue=False)
+
     def test_nacks_when_validation_fails_with_message_model(self) -> None:
         consumer = ConcreteConsumer("amqp://x/", "q", "ex", message_model=_TestMessageModel)
         channel = MagicMock()
@@ -228,6 +239,49 @@ class TestBaseConsumerOnMessageCallback:
 
         channel.basic_ack.assert_not_called()
         channel.basic_nack.assert_called_once_with(delivery_tag=102, requeue=False)
+
+
+class TestBaseConsumerOnMessageCallbackLogging:
+    def test_logs_exception_with_message_id_when_handler_raises(self, caplog: pytest.LogCaptureFixture) -> None:
+        consumer = ConcreteConsumer("amqp://x/", "q", "ex")
+
+        def on_message_raise(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise ValueError("handler error")
+
+        consumer.on_message = on_message_raise
+        method = Basic.Deliver(delivery_tag=5, redelivered=False, exchange="ex", routing_key="rk")
+
+        with caplog.at_level(logging.ERROR, logger="app"):
+            consumer._on_message_callback(MagicMock(), method, BasicProperties(), b'{"id": "post-1"}')
+
+        [record] = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert "message processing failed, nacking" in record.getMessage()
+        assert "message_id=post-1" in record.getMessage()
+        assert "delivery_tag=5" in record.getMessage()
+        assert record.exc_info is not None
+
+    def test_logs_invalid_field_names_without_values_on_validation_error(self, caplog: pytest.LogCaptureFixture) -> None:
+        consumer = ConcreteConsumer("amqp://x/", "q", "ex", message_model=_TestMessageModel)
+        method = Basic.Deliver(delivery_tag=6, redelivered=False, exchange="ex", routing_key="rk")
+
+        with caplog.at_level(logging.ERROR, logger="app"):
+            consumer._on_message_callback(MagicMock(), method, BasicProperties(), b'{"id": "post-2", "value": "secret-value"}')
+
+        [record] = [r for r in caplog.records if r.levelno == logging.ERROR]
+        message = record.getMessage()
+        assert "message failed validation" in message
+        assert "message_id=post-2" in message
+        assert "value" in message
+        assert "secret-value" not in message
+
+    def test_logs_error_on_invalid_json(self, caplog: pytest.LogCaptureFixture) -> None:
+        consumer = ConcreteConsumer("amqp://x/", "q", "ex")
+        method = Basic.Deliver(delivery_tag=7, redelivered=False, exchange="ex", routing_key="rk")
+
+        with caplog.at_level(logging.ERROR, logger="app"):
+            consumer._on_message_callback(MagicMock(), method, BasicProperties(), b"not json")
+
+        assert any("message is not valid JSON" in r.getMessage() for r in caplog.records)
 
 
 class TestBaseConsumerStop:

@@ -87,7 +87,7 @@ class TestImagePreprocessorIsUrlFromCdn:
 
 
 class TestImagePreprocessorResizeToDimensions:
-    """Tests for resize_image_bytes (wraps _resize_to_dimensions)."""
+    """Tests for resize_image_bytes."""
 
     def test_returns_png_bytes_resized_to_dimensions(self) -> None:
         post = _make_post()
@@ -338,3 +338,89 @@ class TestImagePreprocessorTransform:
 
         assert len(result) == 1
         assert isinstance(result[0], bytes)
+
+
+def _fake_response_cm(status: int = 200, content_type: str = "image/png", body: bytes = b""):
+    from unittest.mock import AsyncMock, MagicMock
+
+    mock_resp = AsyncMock()
+    mock_resp.status = status
+    mock_resp.headers = {"Content-Type": content_type}
+    mock_resp.read = AsyncMock(return_value=body)
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=mock_resp)
+    cm.__aexit__ = AsyncMock(return_value=None)
+    return cm
+
+
+class TestImagePreprocessorEdgeCases:
+    """Download and decode failures are isolated per image."""
+
+    def test_resize_returns_none_on_undecodable_bytes(self) -> None:
+        preprocessor = _preprocessor_with_settings(_make_post())
+
+        assert preprocessor.resize_image_bytes(b"not an image") is None
+
+    def test_download_returns_false_on_empty_body(self) -> None:
+        preprocessor = _preprocessor_with_settings(_make_post())
+        session = _make_mock_session(_fake_response_cm(body=b""))
+
+        data, success = asyncio.run(preprocessor._download_image(session, "https://cdn.example.com/empty.png"))
+
+        assert success is False
+        assert data == b""
+
+    def test_download_returns_false_on_client_error(self) -> None:
+        from unittest.mock import MagicMock
+
+        import aiohttp
+
+        preprocessor = _preprocessor_with_settings(_make_post())
+        session = MagicMock()
+        session.get = MagicMock(side_effect=aiohttp.ClientConnectionError("boom"))
+
+        data, success = asyncio.run(preprocessor._download_image(session, "https://cdn.example.com/x.png"))
+
+        assert success is False
+        assert data == b""
+
+    def test_download_returns_false_on_timeout(self) -> None:
+        from unittest.mock import MagicMock
+
+        preprocessor = _preprocessor_with_settings(_make_post())
+        session = MagicMock()
+        session.get = MagicMock(side_effect=TimeoutError())
+
+        _, success = asyncio.run(preprocessor._download_image(session, "https://cdn.example.com/x.png"))
+
+        assert success is False
+
+    def test_transform_skips_corrupt_and_failing_images(self) -> None:
+        from unittest.mock import patch
+
+        import aiohttp
+
+        post = _make_post(
+            image_urls=[
+                "https://cdn.example.com/ok.png",
+                "https://cdn.example.com/corrupt.png",
+                "https://cdn.example.com/error.png",
+            ]
+        )
+        preprocessor = _preprocessor_with_settings(post, cdn_base_url="https://cdn.example.com")
+        good_bytes = _make_png_bytes(2, 2)
+
+        def fake_get(url, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+            if "error" in url:
+                raise aiohttp.ClientConnectionError("boom")
+            if "corrupt" in url:
+                return _fake_response_cm(body=b"not an image")
+            return _fake_response_cm(body=good_bytes)
+
+        with patch("utils.image_preprecessor.aiohttp.ClientSession") as mock_session:
+            mock_session.return_value.__aenter__.return_value.get = fake_get
+
+            result = asyncio.run(preprocessor.transform())
+
+        assert len(result) == 1
+        assert Image.open(io.BytesIO(result[0])).format == "PNG"

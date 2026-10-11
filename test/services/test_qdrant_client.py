@@ -256,10 +256,35 @@ class TestQdrantClientServiceAddPostImage:
         assert len(points) == 2
         assert points[0].id == post.id
         assert points[0].vector == [0.1] * 1536
-        assert points[0].payload == post.model_dump()
+        assert points[0].payload == {"image_urls": post.image_urls}
         assert points[1].id == post.id
         assert points[1].vector == [0.2] * 1536
-        assert points[1].payload == post.model_dump()
+        assert points[1].payload == {"image_urls": post.image_urls}
+
+
+class TestQdrantClientServiceAddPostText:
+    """Tests for QdrantClientService.add_post_text."""
+
+    def test_upserts_single_point_without_payload(self) -> None:
+        svc = _make_service_with_mock_http()
+        mock_result = MagicMock(operation_id=7, status=MagicMock())
+        svc.upsert = AsyncMock(return_value=mock_result)
+        post = _make_post()
+
+        result = asyncio.run(svc.add_post_text(post, [0.3] * 1536))
+
+        assert result is mock_result
+        call_kw = svc.upsert.call_args[1]
+        assert call_kw["collection_name"] == QdrantClientService.POST_TEXT_COLLECTION_NAME
+        [point] = call_kw["points"]
+        assert point.id == post.id
+        assert point.vector == [0.3] * 1536
+        assert point.payload == {}
+
+
+class TestQdrantClientServiceBaseCollectionNames:
+    def test_includes_post_image_and_post_text(self) -> None:
+        assert QdrantClientService.BASE_COLLECTION_NAMES == ["post_image", "post_text"]
 
 
 class TestQdrantClientServiceSearchPostImageSimilarity:

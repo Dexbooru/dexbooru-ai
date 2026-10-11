@@ -8,7 +8,11 @@ import pika
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.channel import Channel
 from pika.spec import Basic, BasicProperties
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def is_amqp_healthy(amqp_url: str) -> bool:
@@ -77,11 +81,36 @@ class BaseConsumer(ABC, threading.Thread):
         properties: BasicProperties,
         body: bytes,
     ) -> None:
+        message_id: Any = None
         try:
-            raw = body.decode("utf-8")
-            payload: BaseModel | Any = json.loads(raw)
+            payload: BaseModel | Any = json.loads(body.decode("utf-8"))
+            if isinstance(payload, dict):
+                message_id = payload.get("id")
             if self.message_model is not None:
                 payload = self.message_model.model_validate(payload)
+        except ValidationError as error:
+            logger.error(
+                "message failed validation, nacking queue=%s routing_key=%s delivery_tag=%s message_id=%s invalid_fields=%s",
+                self.queue_name,
+                method.routing_key,
+                method.delivery_tag,
+                message_id,
+                sorted({".".join(str(part) for part in detail["loc"]) or "(root)" for detail in error.errors()}),
+            )
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            return
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            logger.error(
+                "message is not valid JSON, nacking queue=%s routing_key=%s delivery_tag=%s error=%s",
+                self.queue_name,
+                method.routing_key,
+                method.delivery_tag,
+                type(error).__name__,
+            )
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            return
+
+        try:
             if asyncio.iscoroutinefunction(self.on_message):
                 coro = self.on_message(ch, method, properties, payload)
                 if self.event_loop is not None:
@@ -92,7 +121,20 @@ class BaseConsumer(ABC, threading.Thread):
             else:
                 self.on_message(ch, method, properties, payload)
             ch.basic_ack(delivery_tag=method.delivery_tag)
+            logger.debug(
+                "message acked queue=%s delivery_tag=%s message_id=%s",
+                self.queue_name,
+                method.delivery_tag,
+                message_id,
+            )
         except Exception:
+            logger.exception(
+                "message processing failed, nacking queue=%s routing_key=%s delivery_tag=%s message_id=%s",
+                self.queue_name,
+                method.routing_key,
+                method.delivery_tag,
+                message_id,
+            )
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
     @abstractmethod

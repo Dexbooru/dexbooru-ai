@@ -1,7 +1,9 @@
+from uuid import UUID
+
 import aiohttp
 import numpy as np
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import Distance, PointStruct, UpdateResult, VectorParams
 
 from models.api_responses.post_image_similarity import PostImageSimilarityVectorResult
 from models.application.posts import DexbooruPost
@@ -13,7 +15,8 @@ logger = get_logger(__name__)
 
 class QdrantClientService(AsyncQdrantClient):
     POST_IMAGE_COLLECTION_NAME: str = "post_image"
-    BASE_COLLECTION_NAMES: list[str] = [POST_IMAGE_COLLECTION_NAME]
+    POST_TEXT_COLLECTION_NAME: str = "post_text"
+    BASE_COLLECTION_NAMES: list[str] = [POST_IMAGE_COLLECTION_NAME, POST_TEXT_COLLECTION_NAME]
 
     SIMILARITY_METRIC: Distance = Distance.COSINE
 
@@ -107,18 +110,31 @@ class QdrantClientService(AsyncQdrantClient):
 
         return True
 
-    async def add_post_image(self, post: DexbooruPost, image_embeddings: list[list[float]]):
-        upsert_result = await self.upsert(
-            collection_name=QdrantClientService.POST_IMAGE_COLLECTION_NAME,
-            points=[PointStruct(id=post.id, vector=image_embedding, payload=post.model_dump()) for image_embedding in image_embeddings],
+    @staticmethod
+    def _log_write_result(operation: str, collection_name: str, post_id: UUID, result: UpdateResult) -> None:
+        logger.info(
+            "qdrant %s collection=%s post_id=%s operation_id=%s status=%s",
+            operation,
+            collection_name,
+            post_id,
+            result.operation_id,
+            result.status,
         )
 
-        logger.info(
-            "Upsert result added for post %s, with operation id %s and status %s",
-            post.id,
-            upsert_result.operation_id,
-            upsert_result.status,
+    async def add_post_image(self, post: DexbooruPost, image_embeddings: list[list[float]]) -> UpdateResult:
+        upsert_result = await self.upsert(
+            collection_name=QdrantClientService.POST_IMAGE_COLLECTION_NAME,
+            points=[PointStruct(id=post.id, vector=image_embedding, payload={"image_urls": post.image_urls}) for image_embedding in image_embeddings],
         )
+        self._log_write_result("upsert", QdrantClientService.POST_IMAGE_COLLECTION_NAME, post.id, upsert_result)
+        return upsert_result
+
+    async def add_post_text(self, post: DexbooruPost, text_embedding: list[float]) -> UpdateResult:
+        upsert_result = await self.upsert(
+            collection_name=QdrantClientService.POST_TEXT_COLLECTION_NAME,
+            points=[PointStruct(id=post.id, vector=text_embedding, payload={})],
+        )
+        self._log_write_result("upsert", QdrantClientService.POST_TEXT_COLLECTION_NAME, post.id, upsert_result)
         return upsert_result
 
     async def search_post_image_similarity(self, query_vector: list[float], limit: int) -> list[PostImageSimilarityVectorResult]:
