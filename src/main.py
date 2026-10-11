@@ -5,7 +5,8 @@ import uvicorn
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from consumers.new_post_consumer import NewPostConsumer
+from consumers.post_created_consumer import PostCreatedConsumer
+from consumers.post_updated_consumer import PostUpdatedConsumer
 from controllers.api.health_controller import router as health_router
 from controllers.api.similarity_posts_images_config_controller import router as similarity_post_images_config_router
 from controllers.api.similarity_posts_images_controller import router as similarity_posts_images_router
@@ -50,13 +51,14 @@ async def lifespan(_app: FastAPI):
 
     loop = asyncio.get_running_loop()
     consumers: list[BaseConsumer] = [
-        NewPostConsumer(
+        consumer_cls(
             amqp_url=settings.amqp_url,
             exchange_name=settings.primary_exchange_name,
             event_loop=loop,
             qdrant=_app.state.qdrant,
             gemini=_app.state.gemini,
-        ),
+        )
+        for consumer_cls in (PostCreatedConsumer, PostUpdatedConsumer)
     ]
 
     logger.info("Starting %d consumer(s)", len(consumers))

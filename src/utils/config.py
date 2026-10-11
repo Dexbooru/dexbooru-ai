@@ -34,7 +34,7 @@ class ApplicationSettings(BaseSettings):
     # Gemini settings
     gemini_api_key: str = Field(validation_alias="GEMINI_API_KEY")
     gemini_embedding_model_name: str = Field(
-        default="gemini-embedding-2-preview",
+        default="gemini-embedding-2",
         validation_alias="GEMINI_EMBEDDING_MODEL_NAME",
     )
     gemini_output_dimensions: int = Field(default=1536, validation_alias="GEMINI_OUTPUT_DIMENSIONS")
