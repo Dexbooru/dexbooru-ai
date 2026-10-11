@@ -9,5 +9,29 @@ services:
     volumes:
       - qdrant_data:/data
 
+  postgres:
+    container_name: dexbooru-ai-postgres
+    image: postgres:18
+    ports:
+      - 5433:5432
+    environment:
+      - POSTGRES_DB=dexbooru_ai
+      - POSTGRES_USER=${POSTGRES_USER:?POSTGRES_USER is required}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      # postgres 18+ stores data under /var/lib/postgresql/<major>/docker
+      - postgres_data:/var/lib/postgresql
+
+  redis:
+    container_name: dexbooru-ai-redis
+    image: redis:8-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    ports:
+      - 6380:6379
+    volumes:
+      - redis_data:/data
+
 volumes:
   qdrant_data:
+  postgres_data:
+  redis_data:

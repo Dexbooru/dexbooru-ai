@@ -97,11 +97,7 @@ def main() -> None:
     try:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-        post_json_files = sorted(
-            p.name
-            for p in RAW_DANBOORU_POSTS_DIR.iterdir()
-            if p.is_file() and p.suffix == ".json"
-        )
+        post_json_files = sorted(p.name for p in RAW_DANBOORU_POSTS_DIR.iterdir() if p.is_file() and p.suffix == ".json")
         logger.info("Found %d JSON post files under %s", len(post_json_files), RAW_DANBOORU_POSTS_DIR)
 
         counts: defaultdict[str, int] = defaultdict(int)
