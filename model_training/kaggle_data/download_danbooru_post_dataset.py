@@ -16,12 +16,9 @@ LOCAL_TARGET_FOLDER = "../raw_data/danbooru_posts"
 MAX_RETRIES = 5
 COOLDOWN_SECONDS = 1.5  # Forced wait between successful downloads
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.StreamHandler()])
 logger = logging.getLogger(__name__)
+
 
 def download_file_with_retry(api, full_path, tmp_dir, file_name):
     """Synchronous download with exponential backoff for 429s."""
@@ -34,7 +31,7 @@ def download_file_with_retry(api, full_path, tmp_dir, file_name):
             err_msg = str(e)
             if "429" in err_msg:
                 # Exponential backoff: 5s, 10s, 20s... with jitter
-                wait_time = (5 * (2 ** attempt)) + (random.random() * 5)
+                wait_time = (5 * (2**attempt)) + (random.random() * 5)
                 logger.warning(f"Rate limited (429) on {file_name}. Waiting {wait_time:.2f}s...")
                 time.sleep(wait_time)
             elif "404" in err_msg:
@@ -43,6 +40,7 @@ def download_file_with_retry(api, full_path, tmp_dir, file_name):
                 logger.error(f"Unexpected error on {file_name}: {e}")
                 raise e
     return False
+
 
 def main() -> None:
     api = KaggleApi()
@@ -74,7 +72,7 @@ def main() -> None:
                 zip_path = os.path.join(tmp_dir, f"{file_name}.zip")
 
                 if os.path.exists(zip_path):
-                    with zipfile.ZipFile(zip_path, 'r') as z:
+                    with zipfile.ZipFile(zip_path, "r") as z:
                         z.extractall(tmp_dir)
 
                     src_json = os.path.join(tmp_dir, file_name)
@@ -90,6 +88,7 @@ def main() -> None:
                         time.sleep(COOLDOWN_SECONDS)
 
     logger.info("Sync complete. All files accounted for.")
+
 
 if __name__ == "__main__":
     main()
